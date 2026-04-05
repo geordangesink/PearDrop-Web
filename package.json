@@ -1,0 +1,31 @@
+{
+  "name": "pear-drops-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "relay": "node relay/server.js",
+    "test": "npm run test:node && npm run test:e2e",
+    "test:node": "node --test test/*.test.js",
+    "test:e2e": "node --test --test-force-exit test/*.e2e.test.mjs"
+  },
+  "dependencies": {
+    "@hyperswarm/dht-relay": "^0.4.3",
+    "b4a": "^1.8.0",
+    "corestore": "^7.9.2",
+    "hyperdht": "^6.19.1",
+    "hyperdrive": "^13.0.1",
+    "sodium-javascript": "^0.8.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@peardrops/native-shared": "file:../native-shared",
+    "hyperdht": "^6.19.1",
+    "hyperswarm": "^4.17.0",
+    "playwright": "^1.55.0",
+    "vite": "^7.1.10"
+  }
+}

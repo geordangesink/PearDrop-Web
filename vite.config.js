@@ -1,0 +1,29 @@
+import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      'sodium-universal': fileURLToPath(new URL('./src/shims/sodium-universal.js', import.meta.url)),
+      'sodium-native': 'sodium-javascript',
+      'rocksdb-native': fileURLToPath(new URL('./src/shims/rocksdb-native.js', import.meta.url)),
+      'require-addon': fileURLToPath(new URL('./src/shims/require-addon.js', import.meta.url)),
+      'device-file': fileURLToPath(new URL('./src/shims/device-file.js', import.meta.url)),
+      'fd-lock': fileURLToPath(new URL('./src/shims/fd-lock.js', import.meta.url))
+    }
+  },
+  define: {
+    global: 'globalThis',
+    __filename: JSON.stringify('/browser.js'),
+    __dirname: JSON.stringify('/')
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+        __filename: JSON.stringify('/browser.js'),
+        __dirname: JSON.stringify('/')
+      }
+    }
+  }
+})
