@@ -4,7 +4,7 @@ import RelayStream from '@hyperswarm/dht-relay/ws'
 import { WebSocketServer } from 'ws'
 
 const host = process.env.RELAY_HOST || '0.0.0.0'
-const port = Number(process.env.RELAY_PORT || 49443)
+const port = Number(process.env.PORT || process.env.RELAY_PORT || 49443)
 
 const dht = new DHT()
 const wss = new WebSocketServer({ host, port })
