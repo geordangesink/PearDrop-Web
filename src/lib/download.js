@@ -47,7 +47,7 @@ function decodeUtf8(value) {
   return String(value || '')
 }
 
-export async function readInviteEntry(session, entry, { waitMs = 120000, retryMs = 200 } = {}) {
+export async function readInviteEntry(session, entry, { waitMs = 0, retryMs = 200 } = {}) {
   if (!session || !session.drive) throw new Error('An active drive session is required')
   if (!entry || !entry.drivePath) throw new Error('Entry with drivePath is required')
 
@@ -69,7 +69,7 @@ export async function readInviteEntry(session, entry, { waitMs = 120000, retryMs
 export async function *readInviteEntryChunks(
   session,
   entry,
-  { waitMs = 120000, retryMs = 200, chunkSize = 16 * 1024 } = {}
+  { waitMs = 0, retryMs = 200, chunkSize = 16 * 1024 } = {}
 ) {
   if (!session || !session.drive) throw new Error('An active drive session is required')
   if (!entry || !entry.drivePath) throw new Error('Entry with drivePath is required')
@@ -100,7 +100,7 @@ async function waitForEntry(drive, drivePath, waitMs, retryMs) {
     const data = await drive.get(drivePath)
     if (data) return data
 
-    if (Date.now() - start > waitMs) {
+    if (waitMs > 0 && Date.now() - start > waitMs) {
       throw new Error(`Timed out waiting for ${drivePath}`)
     }
     await sleep(retryMs)
@@ -113,7 +113,7 @@ async function waitForChunk(drive, drivePath, offset, length, waitMs, retryMs) {
     const data = await drive.getChunk(drivePath, offset, length)
     if (data && toUint8(data).byteLength > 0) return data
 
-    if (Date.now() - start > waitMs) {
+    if (waitMs > 0 && Date.now() - start > waitMs) {
       throw new Error(`Timed out waiting for ${drivePath} chunk @${offset}`)
     }
     await sleep(retryMs)
