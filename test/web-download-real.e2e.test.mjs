@@ -73,6 +73,9 @@ test('web app real relay path downloads from bare-backed native uploader', { tim
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ acceptDownloads: true })
+  await page.addInitScript(() => {
+    globalThis.__PEARDROPS_DISABLE_FILE_PICKER__ = true
+  })
 
   await page.goto(`http://127.0.0.1:${WEB_PORT}/?invite=${encodeURIComponent(state.invite)}`)
 

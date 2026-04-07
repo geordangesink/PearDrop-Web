@@ -552,7 +552,12 @@ async function downloadEntry(entry, options = {}) {
     const chunks = [];
     let writable = null;
 
-    if (useByteProgress && typeof window.showSaveFilePicker === "function") {
+    const allowFilePicker =
+      useByteProgress &&
+      typeof window.showSaveFilePicker === "function" &&
+      !(typeof navigator !== "undefined" && navigator.webdriver) &&
+      !globalThis.__PEARDROPS_DISABLE_FILE_PICKER__;
+    if (allowFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
           suggestedName: entry?.name || "download.bin",
@@ -1002,6 +1007,16 @@ async function openDriveViaRelay(parsed) {
         }
 
         const response = await peer.request({ type: "file", path: drivePath });
+        if (!response?.dataBase64) return null;
+        return b4a.from(response.dataBase64, "base64");
+      },
+      async getChunk(drivePath, offset, length) {
+        const response = await peer.request({
+          type: "file-chunk",
+          path: drivePath,
+          offset: Number(offset || 0),
+          length: Number(length || 0),
+        });
         if (!response?.dataBase64) return null;
         return b4a.from(response.dataBase64, "base64");
       },

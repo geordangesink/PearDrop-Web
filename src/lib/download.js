@@ -77,9 +77,25 @@ export async function *readInviteEntryChunks(
   const total = Math.max(0, Number(entry.byteLength || 0))
   const supportsChunks = typeof session.drive.getChunk === 'function'
 
-  if (!supportsChunks || total <= 0) {
+  if (!supportsChunks) {
     const one = await readInviteEntry(session, entry, { waitMs, retryMs })
     yield toUint8(one)
+    return
+  }
+
+  if (total <= 0) {
+    let offset = 0
+    while (true) {
+      const chunk = await waitForChunk(session.drive, entry.drivePath, offset, chunkSize, waitMs, retryMs, { allowEmptyAtStart: offset === 0 })
+      const bytes = toUint8(chunk)
+      if (!bytes.byteLength) {
+        if (offset === 0) throw new Error(`Entry not available: ${entry.drivePath}`)
+        break
+      }
+      yield bytes
+      offset += bytes.byteLength
+      if (bytes.byteLength < chunkSize) break
+    }
     return
   }
 
@@ -109,12 +125,22 @@ async function waitForEntry(drive, drivePath, waitMs, retryMs) {
   }
 }
 
-async function waitForChunk(drive, drivePath, offset, length, waitMs, retryMs) {
+async function waitForChunk(drive, drivePath, offset, length, waitMs, retryMs, options = {}) {
   const start = Date.now()
+  const allowEmptyAtStart = Boolean(options.allowEmptyAtStart)
+  let sawAnyData = false
+  let emptyCount = 0
   while (true) {
     try {
       const data = await drive.getChunk(drivePath, offset, length)
-      if (data && toUint8(data).byteLength > 0) return data
+      const bytes = toUint8(data)
+      if (bytes.byteLength > 0) {
+        sawAnyData = true
+        return bytes
+      }
+      emptyCount += 1
+      if (allowEmptyAtStart && !sawAnyData && emptyCount >= 2) return new Uint8Array(0)
+      if (sawAnyData && emptyCount >= 2) return new Uint8Array(0)
     } catch {}
 
     if (waitMs > 0 && Date.now() - start > waitMs) {
