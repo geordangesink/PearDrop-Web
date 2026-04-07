@@ -152,6 +152,27 @@ app.innerHTML = `
       font-size: 13px;
     }
     .hidden { display: none !important; }
+    .download-progress {
+      margin-top: 8px;
+    }
+    .download-progress-label {
+      color: #6f8598;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .download-progress-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #d7e4ef;
+      overflow: hidden;
+    }
+    .download-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: #1967d2;
+      transition: width 120ms ease;
+    }
     .helper {
       margin-top: 12px;
       padding: 10px 12px;
@@ -270,6 +291,12 @@ app.innerHTML = `
     <tbody id="files"></tbody>
   </table>
   <p id="status">Idle</p>
+  <div id="download-progress" class="download-progress hidden">
+    <div id="download-progress-label" class="download-progress-label">Downloading files...</div>
+    <div class="download-progress-track">
+      <div id="download-progress-fill" class="download-progress-fill"></div>
+    </div>
+  </div>
   <div id="relay-helper" class="helper">
     <div><strong>Relay not running?</strong> Start it with:</div>
     <code id="relay-cmd">cd /Users/geordangesink/Documents/Projects/Pear Drops/web && npm run relay</code>
@@ -290,6 +317,9 @@ app.innerHTML = `
 `;
 
 const statusEl = document.getElementById("status");
+const downloadProgressEl = document.getElementById("download-progress");
+const downloadProgressLabelEl = document.getElementById("download-progress-label");
+const downloadProgressFillEl = document.getElementById("download-progress-fill");
 const filesEl = document.getElementById("files");
 const inviteEl = document.getElementById("invite");
 const joinBtn = document.getElementById("join");
@@ -493,20 +523,27 @@ function previewButtonHtml(entry, index) {
   return `<button class="preview-btn" data-action="preview" data-index="${index}">${escapeHtml((ext || "file").toUpperCase())}</button>`;
 }
 
-async function downloadEntry(entry) {
+async function downloadEntry(entry, options = {}) {
+  const manageProgress = options.manageProgress !== false;
   if (!currentSession) throw new Error("No active session");
-  const data = await readInviteEntry(currentSession, entry);
-  const blob = new Blob([data], {
-    type: entry.mimeType || "application/octet-stream",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = entry.name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  if (manageProgress) showDownloadProgress(0, 1, "Downloading file...");
+  try {
+    const data = await readInviteEntry(currentSession, entry);
+    const blob = new Blob([data], {
+      type: entry.mimeType || "application/octet-stream",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = entry.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    if (manageProgress) showDownloadProgress(1, 1, "Downloading file...");
+  } finally {
+    if (manageProgress) hideDownloadProgress();
+  }
 }
 
 async function downloadSelectedIndividually() {
@@ -517,11 +554,18 @@ async function downloadSelectedIndividually() {
   }
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Downloading ${picked.length} selected file(s)...`;
-  for (const entry of picked) {
-    await downloadEntry(entry);
-    await sleep(40);
+  showDownloadProgress(0, picked.length, "Downloading selected files...");
+  try {
+    for (let i = 0; i < picked.length; i++) {
+      const entry = picked[i];
+      await downloadEntry(entry, { manageProgress: false });
+      showDownloadProgress(i + 1, picked.length, "Downloading selected files...");
+      await sleep(40);
+    }
+    statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
+  } finally {
+    hideDownloadProgress();
   }
-  statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
 }
 
 async function downloadSelectedAsTgz() {
@@ -535,20 +579,44 @@ async function downloadSelectedAsTgz() {
   statusEl.textContent = `Packing ${picked.length} selected file(s) into .tgz...`;
 
   const files = [];
-  for (const entry of picked) {
-    const bytes = await readInviteEntry(currentSession, entry);
-    files.push({
-      name: sanitizeTarName(entry.name || "file.bin"),
-      bytes,
-    });
-  }
+  showDownloadProgress(0, picked.length, "Packing selected files...");
+  try {
+    for (let i = 0; i < picked.length; i++) {
+      const entry = picked[i];
+      const bytes = await readInviteEntry(currentSession, entry);
+      files.push({
+        name: sanitizeTarName(entry.name || "file.bin"),
+        bytes,
+      });
+      showDownloadProgress(i + 1, picked.length, "Packing selected files...");
+    }
 
-  const tarBytes = buildTarArchive(files);
-  const tgzBytes = await gzipBytes(tarBytes);
-  const blob = new Blob([tgzBytes], { type: "application/gzip" });
-  const fileName = `pear-drops-${Date.now()}.tgz`;
-  triggerBrowserDownload(blob, fileName);
-  statusEl.textContent = `Downloaded ${fileName}`;
+    const tarBytes = buildTarArchive(files);
+    const tgzBytes = await gzipBytes(tarBytes);
+    const blob = new Blob([tgzBytes], { type: "application/gzip" });
+    const fileName = `pear-drops-${Date.now()}.tgz`;
+    triggerBrowserDownload(blob, fileName);
+    statusEl.textContent = `Downloaded ${fileName}`;
+  } finally {
+    hideDownloadProgress();
+  }
+}
+
+function showDownloadProgress(done, total, label = "Downloading files...") {
+  if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
+  const safeTotal = Math.max(1, Number(total || 0));
+  const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
+  const percent = Math.round((safeDone / safeTotal) * 100);
+  downloadProgressEl.classList.remove("hidden");
+  downloadProgressLabelEl.textContent = `${label} ${safeDone}/${safeTotal}`;
+  downloadProgressFillEl.style.width = `${percent}%`;
+}
+
+function hideDownloadProgress() {
+  if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
+  downloadProgressFillEl.style.width = "0%";
+  downloadProgressLabelEl.textContent = "Downloading files...";
+  downloadProgressEl.classList.add("hidden");
 }
 
 function getSelectedEntries() {

@@ -36,7 +36,7 @@ test('web app real relay path downloads from bare-backed native uploader', { tim
     env: { ...process.env, RELAY_PORT: String(RELAY_PORT), RELAY_HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe']
   })
-  await waitForOutput(relayProc, `listening on ws://127.0.0.1:${RELAY_PORT}`, 10000)
+  await waitForOutput(relayProc, new RegExp(`ws://127\\.0\\.0\\.1:${RELAY_PORT}`), 10000)
 
   uploaderProc = spawn(
     'bare',
@@ -112,7 +112,9 @@ async function waitForOutput(proc, needle, timeoutMs) {
 
   while (Date.now() - start < timeoutMs) {
     const lines = stdout.split(/\r?\n/)
-    const hit = lines.find((line) => line.includes(needle))
+    const hit = lines.find((line) =>
+      needle instanceof RegExp ? needle.test(line) : line.includes(needle)
+    )
     if (hit) return hit
 
     if (proc.exitCode !== null) {
