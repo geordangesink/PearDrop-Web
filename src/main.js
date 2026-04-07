@@ -160,6 +160,11 @@ app.innerHTML = `
       font-size: 13px;
       margin-bottom: 4px;
     }
+    .download-progress-sub {
+      color: #7f93a4;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
     .download-progress-track {
       width: 100%;
       height: 8px;
@@ -293,6 +298,7 @@ app.innerHTML = `
   <p id="status">Idle</p>
   <div id="download-progress" class="download-progress hidden">
     <div id="download-progress-label" class="download-progress-label">Downloading files...</div>
+    <div id="download-progress-sub" class="download-progress-sub hidden"></div>
     <div class="download-progress-track">
       <div id="download-progress-fill" class="download-progress-fill"></div>
     </div>
@@ -319,6 +325,7 @@ app.innerHTML = `
 const statusEl = document.getElementById("status");
 const downloadProgressEl = document.getElementById("download-progress");
 const downloadProgressLabelEl = document.getElementById("download-progress-label");
+const downloadProgressSubEl = document.getElementById("download-progress-sub");
 const downloadProgressFillEl = document.getElementById("download-progress-fill");
 const filesEl = document.getElementById("files");
 const inviteEl = document.getElementById("invite");
@@ -526,7 +533,17 @@ function previewButtonHtml(entry, index) {
 async function downloadEntry(entry, options = {}) {
   const manageProgress = options.manageProgress !== false;
   if (!currentSession) throw new Error("No active session");
-  if (manageProgress) showDownloadProgress(0, 1, "Downloading file...");
+  const entryBytes = Math.max(0, Number(entry?.byteLength || 0));
+  const useByteProgress = entryBytes > 0;
+  if (manageProgress) {
+    showDownloadProgress(
+      0,
+      useByteProgress ? entryBytes : 1,
+      "Downloading file...",
+      `Current file: ${entry?.name || "file"}`,
+      useByteProgress ? "bytes" : "count"
+    );
+  }
   try {
     const data = await readInviteEntry(currentSession, entry);
     const blob = new Blob([data], {
@@ -540,7 +557,15 @@ async function downloadEntry(entry, options = {}) {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    if (manageProgress) showDownloadProgress(1, 1, "Downloading file...");
+    if (manageProgress) {
+      showDownloadProgress(
+        useByteProgress ? data.byteLength : 1,
+        useByteProgress ? entryBytes : 1,
+        "Downloading file...",
+        `Current file: ${entry?.name || "file"}`,
+        useByteProgress ? "bytes" : "count"
+      );
+    }
   } finally {
     if (manageProgress) hideDownloadProgress();
   }
@@ -554,12 +579,39 @@ async function downloadSelectedIndividually() {
   }
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Downloading ${picked.length} selected file(s)...`;
-  showDownloadProgress(0, picked.length, "Downloading selected files...");
+  const knownTotalBytes = picked.reduce(
+    (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
+    0
+  );
+  const useByteProgress = knownTotalBytes > 0;
+  const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
+  let downloadedBytes = 0;
+  showDownloadProgress(
+    0,
+    totalForProgress,
+    "Downloading selected files...",
+    "Current file: preparing...",
+    useByteProgress ? "bytes" : "count"
+  );
   try {
     for (let i = 0; i < picked.length; i++) {
       const entry = picked[i];
+      showDownloadProgress(
+        useByteProgress ? downloadedBytes : i,
+        totalForProgress,
+        "Downloading selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+        useByteProgress ? "bytes" : "count"
+      );
       await downloadEntry(entry, { manageProgress: false });
-      showDownloadProgress(i + 1, picked.length, "Downloading selected files...");
+      downloadedBytes += Math.max(0, Number(entry?.byteLength || 0));
+      showDownloadProgress(
+        useByteProgress ? downloadedBytes : i + 1,
+        totalForProgress,
+        "Downloading selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+        useByteProgress ? "bytes" : "count"
+      );
       await sleep(40);
     }
     statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
@@ -579,16 +631,45 @@ async function downloadSelectedAsTgz() {
   statusEl.textContent = `Packing ${picked.length} selected file(s) into .tgz...`;
 
   const files = [];
-  showDownloadProgress(0, picked.length, "Packing selected files...");
+  const knownTotalBytes = picked.reduce(
+    (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
+    0
+  );
+  const useByteProgress = knownTotalBytes > 0;
+  const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
+  let packedBytes = 0;
+  showDownloadProgress(
+    0,
+    totalForProgress,
+    "Packing selected files...",
+    "Current file: preparing...",
+    useByteProgress ? "bytes" : "count"
+  );
   try {
     for (let i = 0; i < picked.length; i++) {
       const entry = picked[i];
+      showDownloadProgress(
+        useByteProgress ? packedBytes : i,
+        totalForProgress,
+        "Packing selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+        useByteProgress ? "bytes" : "count"
+      );
       const bytes = await readInviteEntry(currentSession, entry);
       files.push({
         name: sanitizeTarName(entry.name || "file.bin"),
         bytes,
       });
-      showDownloadProgress(i + 1, picked.length, "Packing selected files...");
+      packedBytes += useByteProgress
+        ? bytes.byteLength || Math.max(0, Number(entry?.byteLength || 0))
+        : 1;
+      showDownloadProgress(
+        useByteProgress ? packedBytes : i + 1,
+        totalForProgress,
+        "Packing selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+        useByteProgress ? "bytes" : "count"
+      );
     }
 
     const tarBytes = buildTarArchive(files);
@@ -602,13 +683,28 @@ async function downloadSelectedAsTgz() {
   }
 }
 
-function showDownloadProgress(done, total, label = "Downloading files...") {
+function showDownloadProgress(
+  done,
+  total,
+  label = "Downloading files...",
+  subtitle = "",
+  mode = "count"
+) {
   if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
   const safeTotal = Math.max(1, Number(total || 0));
   const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
   const percent = Math.round((safeDone / safeTotal) * 100);
+  const progressText =
+    mode === "bytes"
+      ? `${percent}% (${formatBytes(safeDone)} / ${formatBytes(safeTotal)})`
+      : `${safeDone}/${safeTotal}`;
   downloadProgressEl.classList.remove("hidden");
-  downloadProgressLabelEl.textContent = `${label} ${safeDone}/${safeTotal}`;
+  downloadProgressLabelEl.textContent = `${label} ${progressText}`;
+  if (downloadProgressSubEl) {
+    const sub = String(subtitle || "").trim();
+    downloadProgressSubEl.textContent = sub;
+    downloadProgressSubEl.classList.toggle("hidden", !sub);
+  }
   downloadProgressFillEl.style.width = `${percent}%`;
 }
 
@@ -616,6 +712,10 @@ function hideDownloadProgress() {
   if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
   downloadProgressFillEl.style.width = "0%";
   downloadProgressLabelEl.textContent = "Downloading files...";
+  if (downloadProgressSubEl) {
+    downloadProgressSubEl.textContent = "";
+    downloadProgressSubEl.classList.add("hidden");
+  }
   downloadProgressEl.classList.add("hidden");
 }
 
