@@ -47,15 +47,51 @@ function decodeUtf8(value) {
   return String(value || '')
 }
 
-export async function readInviteEntry(session, entry, { waitMs = 10000, retryMs = 150 } = {}) {
+export async function readInviteEntry(session, entry, { waitMs = 120000, retryMs = 200 } = {}) {
   if (!session || !session.drive) throw new Error('An active drive session is required')
   if (!entry || !entry.drivePath) throw new Error('Entry with drivePath is required')
+
+  if (typeof session.drive.getChunk === 'function' && Number(entry.byteLength || 0) > 0) {
+    const chunks = []
+    for await (const chunk of readInviteEntryChunks(session, entry, { waitMs, retryMs })) {
+      chunks.push(chunk)
+    }
+    return concatUint8(chunks)
+  }
 
   const data = await waitForEntry(session.drive, entry.drivePath, waitMs, retryMs)
   if (!data) {
     throw new Error(`Entry not found: ${entry.drivePath}`)
   }
   return data
+}
+
+export async function *readInviteEntryChunks(
+  session,
+  entry,
+  { waitMs = 120000, retryMs = 200, chunkSize = 16 * 1024 } = {}
+) {
+  if (!session || !session.drive) throw new Error('An active drive session is required')
+  if (!entry || !entry.drivePath) throw new Error('Entry with drivePath is required')
+
+  const total = Math.max(0, Number(entry.byteLength || 0))
+  const supportsChunks = typeof session.drive.getChunk === 'function'
+
+  if (!supportsChunks || total <= 0) {
+    const one = await readInviteEntry(session, entry, { waitMs, retryMs })
+    yield toUint8(one)
+    return
+  }
+
+  let offset = 0
+  while (offset < total) {
+    const length = Math.min(chunkSize, total - offset)
+    const chunk = await waitForChunk(session.drive, entry.drivePath, offset, length, waitMs, retryMs)
+    const bytes = toUint8(chunk)
+    if (!bytes.byteLength) throw new Error(`Peer returned empty chunk for ${entry.drivePath}`)
+    yield bytes
+    offset += bytes.byteLength
+  }
 }
 
 async function waitForEntry(drive, drivePath, waitMs, retryMs) {
@@ -71,8 +107,41 @@ async function waitForEntry(drive, drivePath, waitMs, retryMs) {
   }
 }
 
+async function waitForChunk(drive, drivePath, offset, length, waitMs, retryMs) {
+  const start = Date.now()
+  while (true) {
+    const data = await drive.getChunk(drivePath, offset, length)
+    if (data && toUint8(data).byteLength > 0) return data
+
+    if (Date.now() - start > waitMs) {
+      throw new Error(`Timed out waiting for ${drivePath} chunk @${offset}`)
+    }
+    await sleep(retryMs)
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function toUint8(value) {
+  if (value instanceof Uint8Array) return value
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  return new Uint8Array(value || 0)
+}
+
+function concatUint8(chunks) {
+  const list = Array.isArray(chunks) ? chunks : []
+  const total = list.reduce((sum, item) => sum + Number(item?.byteLength || 0), 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of list) {
+    const bytes = toUint8(chunk)
+    out.set(bytes, offset)
+    offset += bytes.byteLength
+  }
+  return out
 }
 
 export async function safeClose(session) {

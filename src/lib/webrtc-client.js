@@ -57,6 +57,17 @@ export async function openDriveViaWebRtcInvite(parsed, relayUrl, libs) {
         })
         if (!response?.dataBase64) return null
         return b4a.from(response.dataBase64, 'base64')
+      },
+      async getChunk(drivePath, offset, length) {
+        const response = await peer.request({
+          type: 'file-chunk',
+          path: drivePath,
+          offset: Number(offset || 0),
+          length: Number(length || 0),
+          invite: parsed.nativeInvite
+        })
+        if (!response?.dataBase64) return null
+        return b4a.from(response.dataBase64, 'base64')
       }
     },
     async close() {

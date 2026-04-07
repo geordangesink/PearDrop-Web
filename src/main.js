@@ -2,6 +2,7 @@ import { relayUrlForInvite, formatBytes } from "./lib/invite.js";
 import {
   loadManifestFromInvite,
   readInviteEntry,
+  readInviteEntryChunks,
   safeClose,
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
@@ -532,6 +533,8 @@ function previewButtonHtml(entry, index) {
 
 async function downloadEntry(entry, options = {}) {
   const manageProgress = options.manageProgress !== false;
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+  const chunkSize = Number(options.chunkSize || 16 * 1024);
   if (!currentSession) throw new Error("No active session");
   const entryBytes = Math.max(0, Number(entry?.byteLength || 0));
   const useByteProgress = entryBytes > 0;
@@ -545,21 +548,57 @@ async function downloadEntry(entry, options = {}) {
     );
   }
   try {
-    const data = await readInviteEntry(currentSession, entry);
-    const blob = new Blob([data], {
-      type: entry.mimeType || "application/octet-stream",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = entry.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    let doneBytes = 0;
+    const chunks = [];
+    let writable = null;
+
+    if (useByteProgress && typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: entry?.name || "download.bin",
+        });
+        writable = await handle.createWritable();
+      } catch {
+        writable = null;
+      }
+    }
+
+    for await (const chunk of readInviteEntryChunks(currentSession, entry, { chunkSize })) {
+      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
+      doneBytes += bytes.byteLength;
+      if (writable) await writable.write(bytes);
+      else chunks.push(bytes);
+
+      if (onProgress) onProgress(doneBytes, entry);
+      if (manageProgress) {
+        showDownloadProgress(
+          useByteProgress ? doneBytes : 1,
+          useByteProgress ? entryBytes : 1,
+          "Downloading file...",
+          `Current file: ${entry?.name || "file"}`,
+          useByteProgress ? "bytes" : "count"
+        );
+      }
+    }
+
+    if (writable) {
+      await writable.close();
+    } else {
+      const blob = new Blob(chunks, {
+        type: entry.mimeType || "application/octet-stream",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = entry.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
     if (manageProgress) {
       showDownloadProgress(
-        useByteProgress ? data.byteLength : 1,
+        useByteProgress ? Math.max(doneBytes, entryBytes) : 1,
         useByteProgress ? entryBytes : 1,
         "Downloading file...",
         `Current file: ${entry?.name || "file"}`,
@@ -603,8 +642,21 @@ async function downloadSelectedIndividually() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count"
       );
-      await downloadEntry(entry, { manageProgress: false });
-      downloadedBytes += Math.max(0, Number(entry?.byteLength || 0));
+      const baseAtStart = downloadedBytes;
+      await downloadEntry(entry, {
+        manageProgress: false,
+        onProgress(doneForFile) {
+          downloadedBytes = baseAtStart + Number(doneForFile || 0);
+          showDownloadProgress(
+            useByteProgress ? downloadedBytes : i,
+            totalForProgress,
+            "Downloading selected files...",
+            `Current file: ${entry?.name || `file-${i + 1}`}`,
+            useByteProgress ? "bytes" : "count"
+          );
+        },
+      });
+      downloadedBytes = baseAtStart + Math.max(0, Number(entry?.byteLength || 0));
       showDownloadProgress(
         useByteProgress ? downloadedBytes : i + 1,
         totalForProgress,
