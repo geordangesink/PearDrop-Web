@@ -264,7 +264,7 @@ app.innerHTML = `
   </style>
 
   <h1>Pear Drops Web Client</h1>
-  <p>View an invite drive in browser, then add items or download peer-to-peer.</p>
+  <p>View an invite drive in browser, then download selected files peer-to-peer.</p>
 
   <label for="invite">Invite link</label>
   <textarea id="invite" placeholder="Paste peardrops://invite..."></textarea>
@@ -275,8 +275,6 @@ app.innerHTML = `
   <h2>Files</h2>
   <div class="bulk-actions">
     <span id="bulk-count" class="bulk-count">0 selected</span>
-    <button id="add-selected-btn" class="menu-btn">Add selected to app</button>
-    <button id="add-drive-btn" class="menu-btn">Add drive as folder</button>
     <span class="menu-wrap">
       <button id="download-selected-btn" class="menu-btn">Download selected ▾</button>
       <div id="download-selected-menu" class="menu hidden">
@@ -344,8 +342,6 @@ const previewTitleEl = document.getElementById("preview-title");
 const previewFrameEl = document.getElementById("preview-frame");
 const checkAllEl = document.getElementById("check-all");
 const bulkCountEl = document.getElementById("bulk-count");
-const addSelectedBtn = document.getElementById("add-selected-btn");
-const addDriveBtn = document.getElementById("add-drive-btn");
 const downloadSelectedBtn = document.getElementById("download-selected-btn");
 const downloadSelectedMenu = document.getElementById("download-selected-menu");
 const downloadSelectedTgzBtn = document.getElementById("download-selected-tgz");
@@ -356,7 +352,6 @@ const downloadSelectedIndividualBtn = document.getElementById(
 let currentSession = null;
 let currentEntries = [];
 let selectedEntryKeys = new Set();
-const SAVED_ITEMS_KEY = "peardrops.web.saved-items.v1";
 const previewCache = new Map();
 const objectUrls = new Set();
 
@@ -393,23 +388,6 @@ document.addEventListener("click", (event) => {
 });
 downloadSelectedBtn.addEventListener("click", () => {
   downloadSelectedMenu.classList.toggle("hidden");
-});
-addSelectedBtn?.addEventListener("click", () => {
-  const picked = getSelectedEntries();
-  if (!picked.length) {
-    statusEl.textContent = "Select one or more files first.";
-    return;
-  }
-  persistSavedEntries(picked, { asFolder: false });
-  statusEl.textContent = `Added ${picked.length} selected file(s) to app list.`;
-});
-addDriveBtn?.addEventListener("click", () => {
-  if (!currentEntries.length) {
-    statusEl.textContent = "No drive files loaded yet.";
-    return;
-  }
-  persistSavedEntries(currentEntries, { asFolder: true });
-  statusEl.textContent = `Added drive as folder with ${currentEntries.length} file(s).`;
 });
 downloadSelectedTgzBtn.addEventListener(
   "click",
@@ -556,7 +534,7 @@ function previewButtonHtml(entry, index) {
 async function downloadEntry(entry, options = {}) {
   const manageProgress = options.manageProgress !== false;
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
-  const chunkSize = Number(options.chunkSize || 16 * 1024);
+  const chunkSize = Number(options.chunkSize || 64 * 1024);
   if (!currentSession) throw new Error("No active session");
   const entryBytes = Math.max(0, Number(entry?.byteLength || 0));
   const useByteProgress = entryBytes > 0;
@@ -822,41 +800,6 @@ function triggerBrowserDownload(blob, fileName) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-function persistSavedEntries(entries, { asFolder = false } = {}) {
-  const list = Array.isArray(entries) ? entries : [];
-  if (!list.length) return;
-  const stored = loadSavedEntries();
-  const now = Date.now();
-  const folderId = asFolder ? `drive:${now}` : "";
-  const folderName = asFolder ? `Drive ${new Date(now).toLocaleDateString()}` : "";
-  const next = stored.slice();
-  for (const entry of list) {
-    const key = String(entry?.drivePath || entry?.name || "").trim();
-    if (!key) continue;
-    next.push({
-      id: `saved:${now}:${key}`,
-      name: String(entry?.name || "file"),
-      drivePath: key,
-      byteLength: Number(entry?.byteLength || 0),
-      invite: String(inviteEl?.value || ""),
-      folderId,
-      folderName,
-      savedAt: now,
-    });
-  }
-  localStorage.setItem(SAVED_ITEMS_KEY, JSON.stringify(next.slice(-2000)));
-}
-
-function loadSavedEntries() {
-  try {
-    const raw = localStorage.getItem(SAVED_ITEMS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 function sanitizeTarName(name) {
