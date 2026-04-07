@@ -35,3 +35,39 @@ server.listen(port, host, () => {
   console.log(`[relay] health endpoint: http://${host}:${port}/healthz`)
   console.log(`[relay] websocket relay: ws://${host}:${port}`)
 })
+
+let shuttingDown = false
+const shutdown = async (signal) => {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[relay] shutdown requested (${signal})`)
+
+  await new Promise((resolve) => {
+    try {
+      wss.close(() => resolve())
+    } catch {
+      resolve()
+    }
+  })
+
+  await new Promise((resolve) => {
+    try {
+      server.close(() => resolve())
+    } catch {
+      resolve()
+    }
+  })
+
+  try {
+    await dht.destroy()
+  } catch {}
+
+  process.exit(0)
+}
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM')
+})
+process.on('SIGINT', () => {
+  void shutdown('SIGINT')
+})
