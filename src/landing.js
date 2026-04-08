@@ -226,7 +226,7 @@ app.innerHTML = `
       <span class="mini">No account required</span>
     </div>
     <div class="grid">
-      ${downloadCard("Windows", ".msix", APP_LINKS.windows)}
+      ${downloadCard("Windows", ".exe", APP_LINKS.windows)}
       ${downloadCard("macOS", ".dmg", APP_LINKS.mac)}
       ${downloadCard("Linux", ".AppImage", APP_LINKS.linux)}
       ${downloadCard("Mobile", "iOS / Android", "/download.html")}

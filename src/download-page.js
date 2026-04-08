@@ -146,7 +146,7 @@ app.innerHTML = `
   </section>
 
   <section id="all-downloads" class="grid">
-    ${downloadCard("Windows (.msix)", APP_LINKS.windows)}
+    ${downloadCard("Windows (.exe)", APP_LINKS.windows)}
     ${downloadCard("macOS (.dmg)", APP_LINKS.mac)}
     ${downloadCard("Linux (.AppImage)", APP_LINKS.linux)}
     ${downloadCard("iOS", APP_LINKS.ios)}
