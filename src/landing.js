@@ -32,10 +32,12 @@ app.innerHTML = `
         linear-gradient(180deg, var(--bg), var(--bg-2));
       color: var(--text);
       min-height: 100vh;
+      padding: 20px 0;
+      overflow-x: hidden;
     }
     main {
       width: min(980px, 94vw);
-      margin: 28px auto;
+      margin: 0 auto;
       border-radius: 20px;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -201,8 +203,11 @@ app.innerHTML = `
     @media (max-width: 680px) {
       main {
         width: calc(100vw - 16px);
-        margin: 8px auto;
+        margin: 0 auto;
         border-radius: 14px;
+      }
+      body {
+        padding: 8px 0;
       }
       .hero {
         padding: 22px 14px 18px;

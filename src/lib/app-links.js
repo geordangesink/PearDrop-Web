@@ -1,6 +1,7 @@
-const FALLBACK_WINDOWS_URL = "/downloads/PearDrop.msix";
-const FALLBACK_MAC_URL = "/downloads/PearDrop.dmg";
-const FALLBACK_LINUX_URL = "/downloads/PearDrop.AppImage";
+const FALLBACK_RELEASES_URL = "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
+const FALLBACK_WINDOWS_URL = FALLBACK_RELEASES_URL;
+const FALLBACK_MAC_URL = FALLBACK_RELEASES_URL;
+const FALLBACK_LINUX_URL = FALLBACK_RELEASES_URL;
 const FALLBACK_SITE_ORIGIN = "https://pear-drops.vercel.app";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
@@ -12,7 +13,7 @@ export const APP_LINKS = {
   linux: String(ENV.VITE_LINUX_INSTALLER_URL || FALLBACK_LINUX_URL),
   ios: String(ENV.VITE_IOS_APP_URL || ""),
   android: String(ENV.VITE_ANDROID_APP_URL || ""),
-  releases: String(ENV.VITE_RELEASES_URL || ""),
+  releases: String(ENV.VITE_RELEASES_URL || FALLBACK_RELEASES_URL),
 };
 
 export function detectClientPlatform(uaInput = "") {
