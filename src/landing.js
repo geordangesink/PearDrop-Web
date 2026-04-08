@@ -196,6 +196,19 @@ app.innerHTML = `
       color: #7a8ea2;
       font-size: 13px;
     }
+    .legal-links {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .legal-links a {
+      color: #44607a;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      border-bottom: 1px solid #bfd1e2;
+    }
     @media (max-width: 920px) {
       .split {
         grid-template-columns: 1fr;
@@ -262,6 +275,11 @@ app.innerHTML = `
       </article>
     </section>
     <div class="footer-note">Pear Drop supports direct native deep links and reliable web fallback on all devices.</div>
+    <nav class="legal-links">
+      <a href="/impressum.html">Legal Notice</a>
+      <a href="/privacy.html">Privacy Policy</a>
+      <a href="/terms.html">Terms of Service</a>
+    </nav>
   </section>
 `;
 
