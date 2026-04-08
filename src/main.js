@@ -263,7 +263,7 @@ app.innerHTML = `
     }
   </style>
 
-  <h1>Pear Drops Web Client</h1>
+  <h1>Pear Drop Web Client</h1>
   <p>View an invite drive in browser, then download selected files peer-to-peer.</p>
 
   <label for="invite">Invite link</label>
