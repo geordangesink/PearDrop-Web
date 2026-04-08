@@ -1,10 +1,10 @@
-const FALLBACK_RELEASES_URL = "https://github.com/geordangesink/PearDrop-Desktop/releases";
+const FALLBACK_RELEASES_URL = "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
 const FALLBACK_WINDOWS_URL =
-  "https://github.com/geordangesink/PearDrop-Desktop/releases/download/main-latest/PearDrop-Setup.exe";
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop-Setup.exe";
 const FALLBACK_MAC_URL =
-  "https://github.com/geordangesink/PearDrop-Desktop/releases/download/main-latest/PearDrop.dmg";
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop.dmg";
 const FALLBACK_LINUX_URL =
-  "https://github.com/geordangesink/PearDrop-Desktop/releases/download/main-latest/PearDrop.AppImage";
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop.AppImage";
 const FALLBACK_SITE_ORIGIN = "https://pear-drops.vercel.app";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
