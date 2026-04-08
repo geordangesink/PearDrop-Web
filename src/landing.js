@@ -51,27 +51,6 @@ app.innerHTML = `
         radial-gradient(500px 240px at 100% -20%, rgba(26, 124, 240, 0.18), transparent 70%),
         radial-gradient(520px 230px at -20% -40%, rgba(53, 181, 128, 0.14), transparent 70%);
     }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border-radius: 999px;
-      border: 1px solid #c6d9ec;
-      background: #eff6ff;
-      color: #345572;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      padding: 6px 11px;
-    }
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: #38c18b;
-      box-shadow: 0 0 0 4px rgba(56, 193, 139, 0.2);
-    }
     h1 {
       margin: 16px 0 0;
       font-size: clamp(40px, 7vw, 66px);
@@ -228,7 +207,6 @@ app.innerHTML = `
   </style>
 
   <section class="hero">
-    <span class="badge"><span class="dot"></span>${escapeHtml(platform.label)} detected</span>
     <h1>Pear Drop</h1>
     <p class="sub">Share files with one link. Fast in app, instant in browser.</p>
     <div class="actions">
