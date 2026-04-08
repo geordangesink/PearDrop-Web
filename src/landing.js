@@ -11,15 +11,14 @@ const recommendedInstaller = installerUrlForPlatform(platform.id);
 app.innerHTML = `
   <style>
     :root {
-      --bg: #0e1722;
-      --bg-soft: #132131;
+      --bg: #0b1320;
+      --bg-2: #12233a;
       --panel: #ffffff;
-      --line: #d7e1ec;
-      --text: #12253a;
-      --muted: #5f7387;
-      --brand: #1578de;
-      --brand-dark: #0f5fb2;
-      --accent: #17b37f;
+      --line: #d7e3ef;
+      --text: #0f2237;
+      --muted: #647b92;
+      --brand: #1a7cf0;
+      --brand-2: #1262be;
     }
     * {
       box-sizing: border-box;
@@ -27,271 +26,249 @@ app.innerHTML = `
     body {
       margin: 0;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: var(--text);
       background:
-        radial-gradient(1300px 540px at 20% -10%, #294966 0%, transparent 55%),
-        radial-gradient(1000px 500px at 90% -20%, #113753 0%, transparent 58%),
-        linear-gradient(180deg, var(--bg), var(--bg-soft));
+        radial-gradient(1200px 520px at 15% -10%, #294a70 0%, transparent 62%),
+        radial-gradient(900px 440px at 100% 0%, #12365a 0%, transparent 64%),
+        linear-gradient(180deg, var(--bg), var(--bg-2));
+      color: var(--text);
       min-height: 100vh;
     }
     main {
-      width: min(1120px, 94vw);
+      width: min(980px, 94vw);
       margin: 28px auto;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 22px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), #f8fbff);
-      box-shadow:
-        0 20px 60px rgba(0, 0, 0, 0.35),
-        0 2px 18px rgba(0, 0, 0, 0.14);
+      border-radius: 20px;
       overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
     }
     .hero {
-      position: relative;
-      padding: 38px 36px 28px;
-      background:
-        radial-gradient(540px 220px at 92% -12%, rgba(23, 179, 127, 0.22), transparent 65%),
-        radial-gradient(520px 230px at 4% -18%, rgba(21, 120, 222, 0.26), transparent 62%);
+      padding: 38px 34px 30px;
       border-bottom: 1px solid var(--line);
+      background:
+        radial-gradient(500px 240px at 100% -20%, rgba(26, 124, 240, 0.18), transparent 70%),
+        radial-gradient(520px 230px at -20% -40%, rgba(53, 181, 128, 0.14), transparent 70%);
     }
-    .eyebrow {
+    .badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      border: 1px solid #c6d7ea;
-      background: #eff6ff;
       border-radius: 999px;
-      padding: 6px 12px;
-      color: #2e4e6a;
-      font-weight: 700;
+      border: 1px solid #c6d9ec;
+      background: #eff6ff;
+      color: #345572;
       font-size: 12px;
-      letter-spacing: 0.02em;
+      font-weight: 700;
+      letter-spacing: 0.03em;
       text-transform: uppercase;
+      padding: 6px 11px;
     }
-    .eyebrow-dot {
+    .dot {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: var(--accent);
-      box-shadow: 0 0 0 4px rgba(23, 179, 127, 0.18);
+      background: #38c18b;
+      box-shadow: 0 0 0 4px rgba(56, 193, 139, 0.2);
     }
     h1 {
       margin: 16px 0 0;
-      font-size: clamp(36px, 5vw, 56px);
-      line-height: 0.98;
-      letter-spacing: -0.02em;
-      color: #0d2033;
+      font-size: clamp(40px, 7vw, 66px);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      color: #0a1e33;
     }
     .sub {
       margin: 12px 0 0;
-      max-width: 760px;
+      max-width: 700px;
       color: var(--muted);
-      font-size: 18px;
+      font-size: 19px;
       line-height: 1.45;
     }
-    .hero-actions {
+    .actions {
       margin-top: 22px;
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
+      gap: 10px;
     }
     .btn {
+      text-decoration: none;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font-weight: 700;
+      border: 1px solid transparent;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 12px;
-      border: 1px solid transparent;
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 15px;
-      padding: 11px 16px;
-      cursor: pointer;
-      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      transition: transform 130ms ease, box-shadow 130ms ease;
     }
     .btn:hover {
       transform: translateY(-1px);
     }
     .btn.primary {
-      background: linear-gradient(180deg, var(--brand), var(--brand-dark));
       color: #fff;
-      box-shadow: 0 10px 24px rgba(21, 120, 222, 0.26);
+      background: linear-gradient(180deg, var(--brand), var(--brand-2));
+      box-shadow: 0 10px 24px rgba(26, 124, 240, 0.3);
     }
     .btn.alt {
-      background: #f2f7fd;
-      color: #24445d;
-      border-color: #c5d6e8;
+      color: #274a64;
+      background: #f1f7fd;
+      border-color: #c5d7e8;
     }
-    .content {
-      padding: 26px 30px 30px;
-      display: grid;
-      gap: 20px;
+    .downloads {
+      padding: 22px 24px 18px;
     }
-    .section-head {
+    .downloads-head {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
-      flex-wrap: wrap;
+      margin-bottom: 12px;
     }
-    .section-title {
+    .downloads-title {
       margin: 0;
-      font-size: 24px;
+      font-size: 23px;
       letter-spacing: -0.01em;
     }
-    .platform-chip {
-      border: 1px solid #cbd9e8;
-      background: #f3f8ff;
-      border-radius: 999px;
-      padding: 7px 12px;
-      color: #31526f;
+    .mini {
+      color: var(--muted);
       font-size: 13px;
       font-weight: 600;
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(240px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
     }
     .card {
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 13px;
       background: #fff;
-      padding: 14px;
-      box-shadow: 0 1px 0 rgba(18, 37, 58, 0.04);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 132px;
     }
-    .card h3 {
+    .card h2 {
       margin: 0;
       font-size: 18px;
       color: #163149;
     }
     .card p {
-      margin: 7px 0 10px;
-      color: #647a91;
-      font-size: 14px;
-      line-height: 1.4;
-    }
-    .split {
-      display: grid;
-      grid-template-columns: 1.3fr 1fr;
-      gap: 12px;
-    }
-    .browser-cta {
-      border: 1px solid #cfe0ee;
-      background: linear-gradient(180deg, #f8fcff 0%, #f2f8ff 100%);
-      border-radius: 14px;
-      padding: 16px;
-    }
-    .browser-cta h3 {
       margin: 0;
-      font-size: 22px;
-      color: #13314b;
-    }
-    .browser-cta p {
-      margin: 8px 0 12px;
-      color: #5f748a;
-      font-size: 15px;
-      line-height: 1.45;
-    }
-    .footer-note {
-      margin-top: 4px;
-      color: #7a8ea2;
+      color: #71869c;
       font-size: 13px;
+      line-height: 1.4;
+      min-height: 36px;
     }
-    .legal-links {
-      margin-top: 10px;
+    .card .btn {
+      margin-top: auto;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .footer {
+      border-top: 1px solid var(--line);
+      padding: 14px 22px 18px;
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px 14px;
     }
-    .legal-links a {
-      color: #44607a;
-      text-decoration: none;
-      font-weight: 600;
+    .footer-copy {
+      color: #7890a6;
+      font-size: 12px;
+    }
+    .legal {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .legal a {
+      color: #4a6680;
       font-size: 13px;
-      border-bottom: 1px solid #bfd1e2;
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px solid #c5d5e5;
     }
-    @media (max-width: 920px) {
-      .split {
-        grid-template-columns: 1fr;
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
-    @media (max-width: 760px) {
+    @media (max-width: 680px) {
       main {
-        width: calc(100vw - 20px);
-        margin: 10px auto;
-        border-radius: 16px;
+        width: calc(100vw - 16px);
+        margin: 8px auto;
+        border-radius: 14px;
       }
       .hero {
-        padding: 24px 18px 18px;
-      }
-      .content {
-        padding: 18px 14px 18px;
+        padding: 22px 14px 18px;
       }
       .sub {
         font-size: 16px;
       }
+      .downloads {
+        padding: 16px 12px 12px;
+      }
       .grid {
         grid-template-columns: 1fr;
+      }
+      .footer {
+        padding: 12px;
       }
     }
   </style>
 
   <section class="hero">
-    <span class="eyebrow"><span class="eyebrow-dot"></span>${escapeHtml(platform.label)} detected</span>
+    <span class="badge"><span class="dot"></span>${escapeHtml(platform.label)} detected</span>
     <h1>Pear Drop</h1>
-    <p class="sub">Private invite-based file sharing across desktop, mobile, and web. Install once, then open links instantly.</p>
-    <div class="hero-actions">
+    <p class="sub">Share files with one link. Fast in app, instant in browser.</p>
+    <div class="actions">
       ${
         recommendedInstaller
           ? `<a class="btn primary" href="${escapeHtmlAttr(recommendedInstaller)}">Download for ${escapeHtml(platform.label)}</a>`
-          : `<a class="btn primary" href="/download.html">View Downloads</a>`
+          : `<a class="btn primary" href="/download.html">Download App</a>`
       }
-      <a class="btn alt" href="/download.html">All Installers</a>
-      <a class="btn alt" href="/web-client/">Open Web Client</a>
+      <a class="btn alt" href="/download.html">All Downloads</a>
+      <a class="btn alt" href="/web-client/">Use in Browser</a>
     </div>
   </section>
 
-  <section class="content">
-    <div class="section-head">
-      <h2 class="section-title">Installers</h2>
-      <span class="platform-chip">Smart links open app first, then web fallback</span>
+  <section class="downloads">
+    <div class="downloads-head">
+      <h2 class="downloads-title">Downloads</h2>
+      <span class="mini">No account required</span>
     </div>
-    <section class="grid">
-      ${installerCard("Windows", ".msix installer", APP_LINKS.windows)}
-      ${installerCard("macOS", ".dmg installer", APP_LINKS.mac)}
-      ${installerCard("Linux", ".AppImage package", APP_LINKS.linux)}
-      ${installerCard("Mobile", "iOS + Android download options", "/download.html")}
-    </section>
+    <div class="grid">
+      ${downloadCard("Windows", ".msix", APP_LINKS.windows)}
+      ${downloadCard("macOS", ".dmg", APP_LINKS.mac)}
+      ${downloadCard("Linux", ".AppImage", APP_LINKS.linux)}
+      ${downloadCard("Mobile", "iOS / Android", "/download.html")}
+    </div>
+  </section>
 
-    <section class="split">
-      <article class="browser-cta">
-        <h3>Need no-install access?</h3>
-        <p>Use the browser client to open invite links, preview files, and download selected content immediately.</p>
-        <a class="btn primary" href="/web-client/">Launch Web Client</a>
-      </article>
-      <article class="card">
-        <h3>Share Reliable Invite Links</h3>
-        <p>Use links like <code>/open/?invite=...</code>. If the app is installed it opens directly; otherwise it auto-loads in web client.</p>
-        <a class="btn alt" href="/download.html">See Download + Invite Flow</a>
-      </article>
-    </section>
-    <div class="footer-note">Pear Drop supports direct native deep links and reliable web fallback on all devices.</div>
-    <nav class="legal-links">
+  <footer class="footer">
+    <span class="footer-copy">Pear Drop</span>
+    <nav class="legal">
       <a href="/impressum.html">Legal Notice</a>
       <a href="/privacy.html">Privacy Policy</a>
-      <a href="/terms.html">Terms of Service</a>
+      <a href="/terms.html">Terms</a>
     </nav>
-  </section>
+  </footer>
 `;
 
-function installerCard(title, subtitle, href) {
-  const safeHref = String(href || "").trim();
+function downloadCard(name, ext, href) {
+  const url = String(href || "").trim();
   return `
     <article class="card">
-      <h3>${escapeHtml(title)}</h3>
-      <p>${escapeHtml(subtitle)}</p>
+      <h2>${escapeHtml(name)}</h2>
+      <p>${escapeHtml(ext)}</p>
       ${
-        safeHref
-          ? `<a class="btn alt" href="${escapeHtmlAttr(safeHref)}">Download</a>`
+        url
+          ? `<a class="btn alt" href="${escapeHtmlAttr(url)}">Download</a>`
           : `<span class="btn alt" style="opacity:.55; cursor:default;">Coming soon</span>`
       }
     </article>
