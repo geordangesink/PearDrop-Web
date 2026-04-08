@@ -2,6 +2,16 @@ import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        landing: fileURLToPath(new URL('./index.html', import.meta.url)),
+        download: fileURLToPath(new URL('./download.html', import.meta.url)),
+        openInvite: fileURLToPath(new URL('./open/index.html', import.meta.url)),
+        webClient: fileURLToPath(new URL('./web-client/index.html', import.meta.url))
+      }
+    }
+  },
   resolve: {
     alias: {
       'sodium-universal': fileURLToPath(new URL('./src/shims/sodium-universal.js', import.meta.url)),

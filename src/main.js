@@ -6,6 +6,7 @@ import {
   safeClose,
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
+import { buildWebClientInviteUrl, toNativeInviteUrl } from "./lib/app-links.js";
 
 if (typeof globalThis.global === "undefined") {
   globalThis.global = globalThis;
@@ -265,12 +266,13 @@ app.innerHTML = `
 
   <h1>Pear Drop Web Client</h1>
   <p>View an invite drive in browser, then download selected files peer-to-peer.</p>
+  <p><a href="/" style="color:#2a5973; font-weight:700; text-decoration:none;">← Back to landing</a></p>
 
   <label for="invite">Invite link</label>
   <textarea id="invite" placeholder="Paste peardrops://invite..."></textarea>
   <div>
     <button id="join">View Drive</button>
-    <button id="open-native" class="ghost">Open In Native App</button>
+    <button id="open-native" class="ghost">Open in App</button>
   </div>
   <h2>Files</h2>
   <div class="bulk-actions">
@@ -357,13 +359,12 @@ const objectUrls = new Set();
 
 joinBtn.addEventListener("click", () => void joinInvite());
 openNativeBtn.addEventListener("click", () => {
-  const invite = inviteEl.value.trim();
-  if (
-    invite.startsWith("peardrops://invite") ||
-    invite.startsWith("peardrops-web://join")
-  ) {
-    location.href = invite;
+  const nativeInvite = toNativeInviteUrl(inviteEl.value);
+  if (!nativeInvite) {
+    statusEl.textContent = "Paste a valid invite URL first.";
+    return;
   }
+  openAppWithFallback(nativeInvite);
 });
 copyRelayCmdBtn.addEventListener("click", async () => {
   const cmd = relayCmdEl.textContent || "";
@@ -1184,4 +1185,40 @@ function normalizeInviteInput(value) {
   if (!text) return "";
   if (text.startsWith("Join failed:")) return "";
   return text;
+}
+
+function openAppWithFallback(nativeInvite) {
+  const fallbackUrl = buildWebClientInviteUrl(nativeInvite);
+  let done = false;
+  let timer = null;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    if (timer) clearTimeout(timer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("pagehide", onPageHide);
+  };
+
+  const onVisibilityChange = () => {
+    if (document.hidden) finish();
+  };
+
+  const onPageHide = () => finish();
+
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pagehide", onPageHide, { once: true });
+
+  timer = setTimeout(() => {
+    if (done) return;
+    finish();
+    location.href = fallbackUrl;
+  }, 1500);
+
+  try {
+    location.href = nativeInvite;
+  } catch {
+    finish();
+    location.href = fallbackUrl;
+  }
 }
