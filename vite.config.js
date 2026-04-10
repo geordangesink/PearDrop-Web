@@ -10,6 +10,7 @@ export default defineConfig({
         legalNotice: fileURLToPath(
           new URL("./impressum.html", import.meta.url),
         ),
+        support: fileURLToPath(new URL("./support.html", import.meta.url)),
         privacy: fileURLToPath(new URL("./privacy.html", import.meta.url)),
         terms: fileURLToPath(new URL("./terms.html", import.meta.url)),
         openInvite: fileURLToPath(

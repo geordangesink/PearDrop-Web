@@ -236,6 +236,7 @@ app.innerHTML = `
   <footer class="footer">
     <span class="footer-copy">PearDrop</span>
     <nav class="legal">
+      <a href="/support.html">Support</a>
       <a href="/impressum.html">Legal Notice</a>
       <a href="/privacy.html">Privacy Policy</a>
       <a href="/terms.html">Terms</a>
