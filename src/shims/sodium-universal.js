@@ -1,3 +1,3 @@
-import sodium from 'sodium-javascript'
-export default sodium
-export * from 'sodium-javascript'
+import sodium from "sodium-javascript";
+export default sodium;
+export * from "sodium-javascript";

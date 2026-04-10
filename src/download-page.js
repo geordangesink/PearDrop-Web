@@ -146,7 +146,11 @@ app.innerHTML = `
     ${downloadCard("Android", APP_LINKS.android)}
     ${
       APP_LINKS.releases
-        ? downloadCard("All Releases", APP_LINKS.releases, "Browse all published builds.")
+        ? downloadCard(
+            "All Releases",
+            APP_LINKS.releases,
+            "Browse all published builds.",
+          )
         : ""
     }
   </section>

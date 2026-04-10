@@ -19,7 +19,6 @@ npm run dev
 
 If the relay runs on another host, include it in the invite as `relay` query param.
 
-
 ## Test
 
 ```bash

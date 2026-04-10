@@ -1,4 +1,5 @@
-const FALLBACK_RELEASES_URL = "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
+const FALLBACK_RELEASES_URL =
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
 const FALLBACK_WINDOWS_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop-Setup.exe";
 const FALLBACK_MAC_URL =
@@ -21,7 +22,7 @@ export const APP_LINKS = {
 
 export function detectClientPlatform(uaInput = "") {
   const ua = String(
-    uaInput || (typeof navigator !== "undefined" ? navigator.userAgent : "")
+    uaInput || (typeof navigator !== "undefined" ? navigator.userAgent : ""),
   ).toLowerCase();
   const isAndroid = ua.includes("android");
   const isIPhone = ua.includes("iphone");
@@ -48,7 +49,11 @@ export function installerUrlForPlatform(platformId) {
   return "";
 }
 
-export function buildDownloadPageUrl({ invite = "", source = "", auto = false } = {}) {
+export function buildDownloadPageUrl({
+  invite = "",
+  source = "",
+  auto = false,
+} = {}) {
   const params = new URLSearchParams();
   const platform = detectClientPlatform().id;
   if (platform) params.set("platform", platform);

@@ -4,6 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "prettier --check . && npm run lint:js",
+    "lint:js": "npm run lint:js:browser && npm run lint:js:node && npm run lint:js:test",
+    "lint:js:fix": "npm run lint:js:browser:fix && npm run lint:js:node:fix && npm run lint:js:test:fix",
+    "lint:js:browser": "lunte --env=browser --global=WebSocket --global=RTCPeerConnection --global=Blob --global=CompressionStream src/**/*.js src/*.js",
+    "lint:js:browser:fix": "lunte --env=browser --fix --global=WebSocket --global=RTCPeerConnection --global=Blob --global=CompressionStream src/**/*.js src/*.js",
+    "lint:js:node": "lunte --env=node relay/**/*.js vite.config.js",
+    "lint:js:node:fix": "lunte --env=node --fix relay/**/*.js vite.config.js",
+    "lint:js:test": "lunte --env=node --global=document --global=window --global=location --global=HTMLElement test/*.test.js test/*.e2e.test.mjs",
+    "lint:js:test:fix": "lunte --env=node --fix --global=document --global=window --global=location --global=HTMLElement test/*.test.js test/*.e2e.test.mjs",
+    "format": "prettier --write . && npm run lint:js:fix",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -25,7 +35,10 @@
     "@peardrops/native-shared": "file:../native-shared",
     "hyperdht": "^6.19.1",
     "hyperswarm": "^4.17.0",
+    "lunte": "^1.6.0",
     "playwright": "^1.55.0",
+    "prettier": "^3.8.1",
+    "prettier-config-holepunch": "^2.0.0",
     "vite": "^7.1.10"
   },
   "license": "Apache-2.0"

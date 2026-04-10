@@ -342,9 +342,13 @@ app.innerHTML = `
 
 const statusEl = document.getElementById("status");
 const downloadProgressEl = document.getElementById("download-progress");
-const downloadProgressLabelEl = document.getElementById("download-progress-label");
+const downloadProgressLabelEl = document.getElementById(
+  "download-progress-label",
+);
 const downloadProgressSubEl = document.getElementById("download-progress-sub");
-const downloadProgressFillEl = document.getElementById("download-progress-fill");
+const downloadProgressFillEl = document.getElementById(
+  "download-progress-fill",
+);
 const filesEl = document.getElementById("files");
 const inviteEl = document.getElementById("invite");
 const joinBtn = document.getElementById("join");
@@ -438,8 +442,9 @@ filesEl.addEventListener("click", (event) => {
   if (!(actionNode instanceof HTMLElement)) return;
   const action = actionNode.dataset.action || "";
   const index = Number(actionNode.dataset.index || -1);
-  if (!Number.isInteger(index) || index < 0 || index >= currentEntries.length)
+  if (!Number.isInteger(index) || index < 0 || index >= currentEntries.length) {
     return;
+  }
   const entry = currentEntries[index];
   if (action === "download") void downloadEntry(entry);
   if (action === "preview") void openPreview(entry);
@@ -579,7 +584,8 @@ function previewButtonHtml(entry, index) {
 
 async function downloadEntry(entry, options = {}) {
   const manageProgress = options.manageProgress !== false;
-  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+  const onProgress =
+    typeof options.onProgress === "function" ? options.onProgress : null;
   const chunkSize = Number(options.chunkSize || 64 * 1024);
   if (!currentSession) throw new Error("No active session");
   const entryBytes = Math.max(0, Number(entry?.byteLength || 0));
@@ -590,7 +596,7 @@ async function downloadEntry(entry, options = {}) {
       useByteProgress ? entryBytes : 1,
       "Downloading file...",
       `Current file: ${entry?.name || "file"}`,
-      useByteProgress ? "bytes" : "count"
+      useByteProgress ? "bytes" : "count",
     );
   }
   try {
@@ -614,8 +620,11 @@ async function downloadEntry(entry, options = {}) {
       }
     }
 
-    for await (const chunk of readInviteEntryChunks(currentSession, entry, { chunkSize })) {
-      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
+    for await (const chunk of readInviteEntryChunks(currentSession, entry, {
+      chunkSize,
+    })) {
+      const bytes =
+        chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
       doneBytes += bytes.byteLength;
       if (writable) await writable.write(bytes);
       else chunks.push(bytes);
@@ -627,7 +636,7 @@ async function downloadEntry(entry, options = {}) {
           useByteProgress ? entryBytes : 1,
           "Downloading file...",
           `Current file: ${entry?.name || "file"}`,
-          useByteProgress ? "bytes" : "count"
+          useByteProgress ? "bytes" : "count",
         );
       }
     }
@@ -653,7 +662,7 @@ async function downloadEntry(entry, options = {}) {
         useByteProgress ? entryBytes : 1,
         "Downloading file...",
         `Current file: ${entry?.name || "file"}`,
-        useByteProgress ? "bytes" : "count"
+        useByteProgress ? "bytes" : "count",
       );
     }
   } finally {
@@ -671,7 +680,7 @@ async function downloadSelectedIndividually() {
   statusEl.textContent = `Downloading ${picked.length} selected file(s)...`;
   const knownTotalBytes = picked.reduce(
     (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
-    0
+    0,
   );
   const useByteProgress = knownTotalBytes > 0;
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
@@ -681,7 +690,7 @@ async function downloadSelectedIndividually() {
     totalForProgress,
     "Downloading selected files...",
     "Current file: preparing...",
-    useByteProgress ? "bytes" : "count"
+    useByteProgress ? "bytes" : "count",
   );
   try {
     for (let i = 0; i < picked.length; i++) {
@@ -691,7 +700,7 @@ async function downloadSelectedIndividually() {
         totalForProgress,
         "Downloading selected files...",
         `Current file: ${entry?.name || `file-${i + 1}`}`,
-        useByteProgress ? "bytes" : "count"
+        useByteProgress ? "bytes" : "count",
       );
       const baseAtStart = downloadedBytes;
       await downloadEntry(entry, {
@@ -703,17 +712,18 @@ async function downloadSelectedIndividually() {
             totalForProgress,
             "Downloading selected files...",
             `Current file: ${entry?.name || `file-${i + 1}`}`,
-            useByteProgress ? "bytes" : "count"
+            useByteProgress ? "bytes" : "count",
           );
         },
       });
-      downloadedBytes = baseAtStart + Math.max(0, Number(entry?.byteLength || 0));
+      downloadedBytes =
+        baseAtStart + Math.max(0, Number(entry?.byteLength || 0));
       showDownloadProgress(
         useByteProgress ? downloadedBytes : i + 1,
         totalForProgress,
         "Downloading selected files...",
         `Current file: ${entry?.name || `file-${i + 1}`}`,
-        useByteProgress ? "bytes" : "count"
+        useByteProgress ? "bytes" : "count",
       );
       await sleep(40);
     }
@@ -736,7 +746,7 @@ async function downloadSelectedAsTgz() {
   const files = [];
   const knownTotalBytes = picked.reduce(
     (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
-    0
+    0,
   );
   const useByteProgress = knownTotalBytes > 0;
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
@@ -746,7 +756,7 @@ async function downloadSelectedAsTgz() {
     totalForProgress,
     "Packing selected files...",
     "Current file: preparing...",
-    useByteProgress ? "bytes" : "count"
+    useByteProgress ? "bytes" : "count",
   );
   try {
     for (let i = 0; i < picked.length; i++) {
@@ -756,7 +766,7 @@ async function downloadSelectedAsTgz() {
         totalForProgress,
         "Packing selected files...",
         `Current file: ${entry?.name || `file-${i + 1}`}`,
-        useByteProgress ? "bytes" : "count"
+        useByteProgress ? "bytes" : "count",
       );
       const bytes = await readInviteEntry(currentSession, entry);
       files.push({
@@ -771,7 +781,7 @@ async function downloadSelectedAsTgz() {
         totalForProgress,
         "Packing selected files...",
         `Current file: ${entry?.name || `file-${i + 1}`}`,
-        useByteProgress ? "bytes" : "count"
+        useByteProgress ? "bytes" : "count",
       );
     }
 
@@ -791,9 +801,15 @@ function showDownloadProgress(
   total,
   label = "Downloading files...",
   subtitle = "",
-  mode = "count"
+  mode = "count",
 ) {
-  if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
+  if (
+    !downloadProgressEl ||
+    !downloadProgressLabelEl ||
+    !downloadProgressFillEl
+  ) {
+    return;
+  }
   const safeTotal = Math.max(1, Number(total || 0));
   const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
   const percent = Math.round((safeDone / safeTotal) * 100);
@@ -812,7 +828,13 @@ function showDownloadProgress(
 }
 
 function hideDownloadProgress() {
-  if (!downloadProgressEl || !downloadProgressLabelEl || !downloadProgressFillEl) return;
+  if (
+    !downloadProgressEl ||
+    !downloadProgressLabelEl ||
+    !downloadProgressFillEl
+  ) {
+    return;
+  }
   downloadProgressFillEl.style.width = "0%";
   downloadProgressLabelEl.textContent = "Downloading files...";
   if (downloadProgressSubEl) {
@@ -1195,9 +1217,11 @@ function createPeerRequestClient(stream) {
           const waiter = pending.get(message.id);
           if (waiter) {
             pending.delete(message.id);
-            if (message.ok === false)
+            if (message.ok === false) {
               waiter.reject(new Error(message.error || "Peer request failed"));
-            else waiter.resolve(message);
+            } else {
+              waiter.resolve(message);
+            }
           }
         } catch {
           // Helps diagnose protocol mismatches when connected peer is not serving the expected API.
