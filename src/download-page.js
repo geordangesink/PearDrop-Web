@@ -2,12 +2,10 @@ import {
   APP_LINKS,
   detectClientPlatform,
   installerUrlForPlatform,
-  toNativeInviteUrl,
 } from "./lib/app-links.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
-const invite = toNativeInviteUrl(params.get("invite") || "");
 const platformInfo = detectClientPlatform();
 const preferredUrl = installerUrlForPlatform(platformInfo.id);
 const auto = params.get("auto") === "1";
@@ -137,11 +135,6 @@ app.innerHTML = `
           ? `<a id="recommended-link" class="btn" href="${escapeHtmlAttr(preferredUrl)}">Download for ${escapeHtml(platformInfo.label)}</a>`
           : `<a id="recommended-link" class="btn alt" href="#all-downloads">View all download options</a>`
       }
-      ${
-        invite
-          ? `<button id="open-app-btn" class="btn alt" type="button">Open invite in app</button>`
-          : ""
-      }
     </div>
   </section>
 
@@ -158,14 +151,6 @@ app.innerHTML = `
     }
   </section>
 `;
-
-const openAppBtn = document.getElementById("open-app-btn");
-if (openAppBtn) {
-  openAppBtn.addEventListener("click", () => {
-    if (!invite) return;
-    location.href = invite;
-  });
-}
 
 if (auto && preferredUrl) {
   setTimeout(() => {

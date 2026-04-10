@@ -54,6 +54,20 @@ app.innerHTML = `
       color: #1f7a68;
       margin-left: 8px;
     }
+    .join-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 999px;
+      margin-right: 8px;
+      animation: joinspin 0.8s linear infinite;
+      vertical-align: -2px;
+    }
+    @keyframes joinspin {
+      to { transform: rotate(360deg); }
+    }
     .bulk-actions {
       display: flex;
       align-items: center;
@@ -272,6 +286,7 @@ app.innerHTML = `
   <textarea id="invite" placeholder="Paste peardrops://invite..."></textarea>
   <div>
     <button id="join">View Drive</button>
+    <button id="join-cancel" class="ghost hidden">Cancel</button>
     <button id="open-native" class="ghost">Open in App</button>
   </div>
   <h2>Files</h2>
@@ -333,6 +348,7 @@ const downloadProgressFillEl = document.getElementById("download-progress-fill")
 const filesEl = document.getElementById("files");
 const inviteEl = document.getElementById("invite");
 const joinBtn = document.getElementById("join");
+const joinCancelBtn = document.getElementById("join-cancel");
 const openNativeBtn = document.getElementById("open-native");
 const relayHelperEl = document.getElementById("relay-helper");
 const copyRelayCmdBtn = document.getElementById("copy-relay-cmd");
@@ -356,8 +372,16 @@ let currentEntries = [];
 let selectedEntryKeys = new Set();
 const previewCache = new Map();
 const objectUrls = new Set();
+let joinInFlight = false;
+let activeJoinToken = 0;
 
 joinBtn.addEventListener("click", () => void joinInvite());
+joinCancelBtn.addEventListener("click", () => {
+  if (!joinInFlight) return;
+  activeJoinToken += 1;
+  setJoinLoading(false);
+  statusEl.textContent = "Cancelled loading invite.";
+});
 openNativeBtn.addEventListener("click", () => {
   const nativeInvite = toNativeInviteUrl(inviteEl.value);
   if (!nativeInvite) {
@@ -434,8 +458,10 @@ if (initialInvite) {
 }
 
 async function joinInvite() {
+  const token = ++activeJoinToken;
   const invite = normalizeInviteInput(inviteEl.value);
   if (!invite) {
+    setJoinLoading(false);
     statusEl.textContent = "Paste an invite URL first.";
     return;
   }
@@ -443,16 +469,19 @@ async function joinInvite() {
     !invite.startsWith("peardrops://invite") &&
     !invite.startsWith("peardrops-web://join")
   ) {
+    setJoinLoading(false);
     statusEl.textContent =
       "Invite must be a peardrops:// link, peardrops-web:// link, or a https://peardrop.online/open/?invite=... link";
     return;
   }
 
+  setJoinLoading(true);
   statusEl.textContent = "Connecting to relay and peer swarm...";
 
   try {
     relayHelperEl.style.display = "none";
     await safeClose(currentSession);
+    if (token !== activeJoinToken) return;
     currentSession = null;
     clearPreviewCache();
 
@@ -465,6 +494,10 @@ async function joinInvite() {
     const { manifest, session } = await loadManifestFromInvite(invite, {
       openDrive,
     });
+    if (token !== activeJoinToken) {
+      await safeClose(session);
+      return;
+    }
 
     currentSession = session;
     currentEntries = Array.isArray(manifest.files) ? manifest.files : [];
@@ -474,12 +507,24 @@ async function joinInvite() {
 
     statusEl.textContent = `Connected. ${manifest.files?.length || 0} file(s) available.`;
   } catch (error) {
+    if (token !== activeJoinToken) return;
     const message = error.message || String(error);
     statusEl.textContent = `Join failed: ${message}`;
     if (message.includes("Relay connection failed")) {
       relayHelperEl.style.display = "block";
     }
+  } finally {
+    if (token === activeJoinToken) setJoinLoading(false);
   }
+}
+
+function setJoinLoading(loading) {
+  joinInFlight = Boolean(loading);
+  joinBtn.disabled = joinInFlight;
+  joinCancelBtn.classList.toggle("hidden", !joinInFlight);
+  joinBtn.innerHTML = joinInFlight
+    ? '<span class="join-spinner"></span>Loading...'
+    : "View Drive";
 }
 
 function renderFileRows(entries) {
