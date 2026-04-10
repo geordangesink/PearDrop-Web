@@ -49,7 +49,7 @@ app.innerHTML = `
       }
     }
   </style>
-  <h1>Opening Pear Drop...</h1>
+  <h1>Opening PearDrop...</h1>
   <p id="hint">Trying the native app first. If unavailable, loading web client.</p>
   <div class="spinner"></div>
 `;

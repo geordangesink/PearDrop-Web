@@ -87,5 +87,38 @@ export function toNativeInviteUrl(value) {
     }
   }
 
+  try {
+    const parsed = new URL(raw);
+    const protocol = String(parsed.protocol || "").toLowerCase();
+
+    if (protocol === "http:" || protocol === "https:") {
+      const nested = parsed.searchParams.get("invite");
+      if (nested) return toNativeInviteUrl(nested);
+      if (hasInviteCoordinates(parsed.searchParams)) {
+        return `peardrops://invite${parsed.search || ""}`;
+      }
+      return "";
+    }
+
+    if (protocol === "peardrops:") {
+      const nested = parsed.searchParams.get("invite");
+      if (nested) return toNativeInviteUrl(nested);
+      if (hasInviteCoordinates(parsed.searchParams)) {
+        return `peardrops://invite${parsed.search || ""}`;
+      }
+    }
+  } catch {}
+
   return "";
+}
+
+function hasInviteCoordinates(searchParams) {
+  return (
+    searchParams.has("drive") ||
+    searchParams.has("room") ||
+    searchParams.has("topic") ||
+    searchParams.has("relay") ||
+    searchParams.has("web") ||
+    searchParams.has("signal")
+  );
 }

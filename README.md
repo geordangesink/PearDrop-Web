@@ -1,6 +1,6 @@
-# Pear Drops Web (MVP)
+# PearDrop Web (MVP)
 
-Browser join/download client for Pear Drops native uploaders.
+Browser join/download client for PearDrop native uploaders.
 
 ## Architecture
 

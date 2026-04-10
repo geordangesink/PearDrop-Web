@@ -207,7 +207,7 @@ app.innerHTML = `
   </style>
 
   <section class="hero">
-    <h1>Pear Drop</h1>
+    <h1>PearDrop</h1>
     <p class="sub">Share files with one link. Fast in app, instant in browser.</p>
     <div class="actions">
       ${
@@ -234,7 +234,7 @@ app.innerHTML = `
   </section>
 
   <footer class="footer">
-    <span class="footer-copy">Pear Drop</span>
+    <span class="footer-copy">PearDrop</span>
     <nav class="legal">
       <a href="/impressum.html">Legal Notice</a>
       <a href="/privacy.html">Privacy Policy</a>

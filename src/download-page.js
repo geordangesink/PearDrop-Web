@@ -124,10 +124,10 @@ app.innerHTML = `
   </style>
 
   <div class="top">
-    <h1>Get Pear Drop</h1>
+    <h1>Get PearDrop</h1>
     <span class="badge">Detected: ${escapeHtml(platformInfo.label)}</span>
   </div>
-  <p class="sub">Install the app for your device, then open invites directly in Pear Drop.</p>
+  <p class="sub">Install the app for your device, then open invites directly in PearDrop.</p>
 
   <section class="hero">
     <strong>Recommended for this device</strong>

@@ -11,7 +11,7 @@ const dht = new DHT()
 const server = http.createServer((req, res) => {
   if (req.url === '/healthz' || req.url === '/') {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end('Pear Drops relay is running\n')
+    res.end('PearDrop relay is running\n')
     return
   }
 
