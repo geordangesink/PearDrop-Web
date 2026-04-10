@@ -48,6 +48,12 @@ app.innerHTML = `
       margin-top: 12px;
       cursor: pointer;
     }
+    button:disabled,
+    button.is-loading {
+      opacity: 0.65;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
     .ghost {
       border: 1px solid #1f7a68;
       background: transparent;
@@ -463,6 +469,7 @@ if (initialInvite) {
 }
 
 async function joinInvite() {
+  if (joinInFlight) return;
   const token = ++activeJoinToken;
   const invite = normalizeInviteInput(inviteEl.value);
   if (!invite) {
@@ -526,6 +533,8 @@ async function joinInvite() {
 function setJoinLoading(loading) {
   joinInFlight = Boolean(loading);
   joinBtn.disabled = joinInFlight;
+  joinBtn.classList.toggle("is-loading", joinInFlight);
+  joinBtn.setAttribute("aria-busy", joinInFlight ? "true" : "false");
   joinCancelBtn.classList.toggle("hidden", !joinInFlight);
   joinBtn.innerHTML = joinInFlight
     ? '<span class="join-spinner"></span>Loading...'
