@@ -444,7 +444,7 @@ async function joinInvite() {
     !invite.startsWith("peardrops-web://join")
   ) {
     statusEl.textContent =
-      "Invite must start with peardrops://invite or peardrops-web://join";
+      "Invite must be a peardrops:// link, peardrops-web:// link, or a https://peardrop.online/open/?invite=... link";
     return;
   }
 
@@ -1184,7 +1184,7 @@ function normalizeInviteInput(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   if (text.startsWith("Join failed:")) return "";
-  return text;
+  return toNativeInviteUrl(text) || text;
 }
 
 function openAppWithFallback(nativeInvite) {

@@ -5,7 +5,7 @@ const FALLBACK_MAC_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop.dmg";
 const FALLBACK_LINUX_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/download/main-latest/PearDrop.AppImage";
-const FALLBACK_SITE_ORIGIN = "https://pear-drops.vercel.app";
+const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
 

@@ -4,16 +4,15 @@ import { toNativeInviteUrl } from "../src/lib/app-links.js";
 
 test("toNativeInviteUrl accepts https open links with nested invite", () => {
   const native = "peardrops://invite?drive=abc123&relay=wss%3A%2F%2Fpear-drops.up.railway.app";
-  const httpsLink = `https://pear-drops.vercel.app/open/?invite=${encodeURIComponent(native)}`;
+  const httpsLink = `https://peardrop.online/open/?invite=${encodeURIComponent(native)}`;
   assert.equal(toNativeInviteUrl(httpsLink), native);
 });
 
 test("toNativeInviteUrl accepts https links with invite coordinates directly", () => {
   const input =
-    "https://pear-drops.vercel.app/open/?drive=abc123&room=room123&relay=wss%3A%2F%2Fpear-drops.up.railway.app";
+    "https://peardrop.online/open/?drive=abc123&room=room123&relay=wss%3A%2F%2Fpear-drops.up.railway.app";
   assert.equal(
     toNativeInviteUrl(input),
     "peardrops://invite?drive=abc123&room=room123&relay=wss%3A%2F%2Fpear-drops.up.railway.app"
   );
 });
-
