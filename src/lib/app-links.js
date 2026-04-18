@@ -10,9 +10,22 @@ const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
 
+function resolveWindowsInstallerUrl() {
+  const configured = String(ENV.VITE_WINDOWS_INSTALLER_URL || "").trim();
+  if (!configured) return FALLBACK_WINDOWS_URL;
+
+  // Temporary guard: ignore legacy Railway-hosted Windows links and prefer GitHub releases.
+  const lowered = configured.toLowerCase();
+  if (lowered.includes(".up.railway.app/") || lowered.includes("/downloads/win32/")) {
+    return FALLBACK_WINDOWS_URL;
+  }
+
+  return configured;
+}
+
 export const APP_LINKS = {
   siteOrigin: String(ENV.VITE_PUBLIC_SITE_ORIGIN || FALLBACK_SITE_ORIGIN),
-  windows: String(ENV.VITE_WINDOWS_INSTALLER_URL || FALLBACK_WINDOWS_URL),
+  windows: resolveWindowsInstallerUrl(),
   mac: String(ENV.VITE_MAC_INSTALLER_URL || FALLBACK_MAC_URL),
   linux: String(ENV.VITE_LINUX_INSTALLER_URL || FALLBACK_LINUX_URL),
   ios: String(ENV.VITE_IOS_APP_URL || ""),
