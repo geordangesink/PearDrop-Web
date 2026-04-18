@@ -656,6 +656,8 @@ async function downloadEntry(entry, options = {}) {
       const blob = new Blob(chunks, {
         type: entry.mimeType || "application/octet-stream",
       });
+      const handledByShareSheet = await maybeShareMediaToPhotos(blob, entry);
+      if (handledByShareSheet) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1040,6 +1042,68 @@ function fileExt(name) {
     : String(name)
         .slice(idx + 1)
         .toLowerCase();
+}
+
+function isMediaFileEntry(entry) {
+  const mime = String(entry?.mimeType || "").toLowerCase();
+  const ext = fileExt(entry?.name || "");
+  if (mime.startsWith("image/") || mime.startsWith("video/")) return true;
+  return [
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "heic",
+    "heif",
+    "mp4",
+    "mov",
+    "webm",
+    "m4v",
+  ].includes(ext);
+}
+
+function isLikelyMobileBrowser() {
+  const ua = String(navigator?.userAgent || "").toLowerCase();
+  return /iphone|ipad|ipod|android|mobile/.test(ua);
+}
+
+async function maybeShareMediaToPhotos(blob, entry) {
+  if (!isLikelyMobileBrowser()) return false;
+  if (!isMediaFileEntry(entry)) return false;
+  if (typeof navigator?.share !== "function") return false;
+  if (typeof File !== "function") return false;
+
+  const file = new File([blob], String(entry?.name || "download"), {
+    type: String(entry?.mimeType || blob.type || "application/octet-stream"),
+  });
+
+  if (typeof navigator?.canShare === "function") {
+    try {
+      if (!navigator.canShare({ files: [file] })) return false;
+    } catch {
+      return false;
+    }
+  }
+
+  const shouldOpenShareSheet = window.confirm(
+    "Save to Photos? We can open the share sheet so you can choose “Save Image” or “Save Video”.",
+  );
+  if (!shouldOpenShareSheet) return false;
+
+  try {
+    await navigator.share({
+      files: [file],
+      title: String(entry?.name || "PearDrop media"),
+      text: "Save to Photos",
+    });
+    statusEl.textContent =
+      "Opened share sheet. Choose “Save Image” or “Save Video” to save to Photos.";
+    return true;
+  } catch (error) {
+    if (String(error?.name || "") === "AbortError") return true;
+    return false;
+  }
 }
 
 function escapeHtml(value) {
