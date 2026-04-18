@@ -177,6 +177,27 @@ app.innerHTML = `
     .download-progress {
       margin-top: 8px;
     }
+    .join-progress {
+      margin-top: 10px;
+    }
+    .join-progress-label {
+      color: #6f8598;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .join-progress-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #d7e4ef;
+      overflow: hidden;
+    }
+    .join-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: #1f7a68;
+      transition: width 160ms ease;
+    }
     .download-progress-label {
       color: #6f8598;
       font-size: 13px;
@@ -320,6 +341,12 @@ app.innerHTML = `
     <tbody id="files"></tbody>
   </table>
   <p id="status">Idle</p>
+  <div id="join-progress" class="join-progress hidden">
+    <div id="join-progress-label" class="join-progress-label">Connecting to peer...</div>
+    <div class="join-progress-track">
+      <div id="join-progress-fill" class="join-progress-fill"></div>
+    </div>
+  </div>
   <div id="download-progress" class="download-progress hidden">
     <div id="download-progress-label" class="download-progress-label">Downloading files...</div>
     <div id="download-progress-sub" class="download-progress-sub hidden"></div>
@@ -347,6 +374,9 @@ app.innerHTML = `
 `;
 
 const statusEl = document.getElementById("status");
+const joinProgressEl = document.getElementById("join-progress");
+const joinProgressLabelEl = document.getElementById("join-progress-label");
+const joinProgressFillEl = document.getElementById("join-progress-fill");
 const downloadProgressEl = document.getElementById("download-progress");
 const downloadProgressLabelEl = document.getElementById(
   "download-progress-label",
@@ -384,12 +414,15 @@ const previewCache = new Map();
 const objectUrls = new Set();
 let joinInFlight = false;
 let activeJoinToken = 0;
+let joinProgressTimer = null;
+let joinProgressValue = 0;
 
 joinBtn.addEventListener("click", () => void joinInvite());
 joinCancelBtn.addEventListener("click", () => {
   if (!joinInFlight) return;
   activeJoinToken += 1;
   setJoinLoading(false);
+  stopJoinProgress();
   statusEl.textContent = "Cancelled loading invite.";
 });
 openNativeBtn.addEventListener("click", () => {
@@ -488,9 +521,11 @@ async function joinInvite() {
   }
 
   setJoinLoading(true);
+  startJoinProgress("Connecting to relay and peer swarm...");
   statusEl.textContent = "Connecting to relay and peer swarm...";
 
   try {
+    setJoinProgress(16, "Resetting previous session...");
     relayHelperEl.style.display = "none";
     await safeClose(currentSession);
     if (token !== activeJoinToken) return;
@@ -501,8 +536,12 @@ async function joinInvite() {
     const openDrive =
       typeof maybeTestOpenDrive === "function"
         ? (parsed) => maybeTestOpenDrive(parsed)
-        : (parsed) => openDriveFromInvite(parsed);
+        : async (parsed) => {
+            setJoinProgress(52, "Connecting to peer...");
+            return openDriveFromInvite(parsed);
+          };
 
+    setJoinProgress(32, "Waiting for peer drive manifest...");
     const { manifest, session } = await loadManifestFromInvite(invite, {
       openDrive,
     });
@@ -515,7 +554,9 @@ async function joinInvite() {
     currentEntries = Array.isArray(manifest.files) ? manifest.files : [];
     selectedEntryKeys = new Set();
 
+    setJoinProgress(90, "Rendering drive contents...");
     renderFileRows(currentEntries);
+    setJoinProgress(100, "Drive ready");
 
     statusEl.textContent = `Connected. ${manifest.files?.length || 0} file(s) available.`;
   } catch (error) {
@@ -526,7 +567,10 @@ async function joinInvite() {
       relayHelperEl.style.display = "block";
     }
   } finally {
-    if (token === activeJoinToken) setJoinLoading(false);
+    if (token === activeJoinToken) {
+      setJoinLoading(false);
+      stopJoinProgress();
+    }
   }
 }
 
@@ -539,6 +583,35 @@ function setJoinLoading(loading) {
   joinBtn.innerHTML = joinInFlight
     ? '<span class="join-spinner"></span>Loading...'
     : "View Drive";
+}
+
+function startJoinProgress(label = "Connecting to peer...") {
+  stopJoinProgress(false)
+  joinProgressValue = 8
+  if (joinProgressEl) joinProgressEl.classList.remove("hidden")
+  if (joinProgressLabelEl) joinProgressLabelEl.textContent = label
+  if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
+  joinProgressTimer = setInterval(() => {
+    if (!joinInFlight) return
+    if (joinProgressValue >= 92) return
+    joinProgressValue = Math.min(92, joinProgressValue + 2)
+    if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
+  }, 220)
+}
+
+function setJoinProgress(value, label = "") {
+  joinProgressValue = Math.max(0, Math.min(100, Number(value || 0)))
+  if (joinProgressEl) joinProgressEl.classList.remove("hidden")
+  if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
+  if (label && joinProgressLabelEl) joinProgressLabelEl.textContent = label
+}
+
+function stopJoinProgress(hide = true) {
+  if (joinProgressTimer) {
+    clearInterval(joinProgressTimer)
+    joinProgressTimer = null
+  }
+  if (hide && joinProgressEl) joinProgressEl.classList.add("hidden")
 }
 
 function renderFileRows(entries) {
