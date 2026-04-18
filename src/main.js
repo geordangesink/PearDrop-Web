@@ -416,6 +416,24 @@ let joinInFlight = false;
 let activeJoinToken = 0;
 let joinProgressTimer = null;
 let joinProgressValue = 0;
+const JOIN_PHASES = Object.freeze({
+  "parse-invite": { value: 8, label: "Parsing invite..." },
+  "open-drive": { value: 14, label: "Preparing connection..." },
+  "relay-connect": { value: 20, label: "Connecting to relay..." },
+  "relay-open": { value: 28, label: "Relay connected. Initializing DHT..." },
+  "dht-init": { value: 34, label: "Initializing peer discovery..." },
+  "signal-connect": { value: 40, label: "Opening signaling channel..." },
+  "signal-open": { value: 46, label: "Signaling channel ready." },
+  "rtc-setup": { value: 52, label: "Preparing WebRTC connection..." },
+  "offer-create": { value: 58, label: "Creating peer offer..." },
+  "offer-send": { value: 64, label: "Sending offer to peer..." },
+  "peer-handshake": { value: 72, label: "Waiting for peer handshake..." },
+  "channel-open": { value: 80, label: "Secure channel established." },
+  "drive-ready": { value: 86, label: "Peer drive connected." },
+  "manifest-request": { value: 90, label: "Requesting drive manifest..." },
+  "manifest-received": { value: 94, label: "Manifest received..." },
+  "manifest-parsed": { value: 96, label: "Preparing file list..." },
+});
 
 joinBtn.addEventListener("click", () => void joinInvite());
 joinCancelBtn.addEventListener("click", () => {
@@ -521,29 +539,36 @@ async function joinInvite() {
   }
 
   setJoinLoading(true);
-  startJoinProgress("Connecting to relay and peer swarm...");
+  startJoinProgress("Initializing connection...");
   statusEl.textContent = "Connecting to relay and peer swarm...";
 
   try {
-    setJoinProgress(16, "Resetting previous session...");
+    setJoinProgress(6, "Resetting previous session...");
     relayHelperEl.style.display = "none";
     await safeClose(currentSession);
     if (token !== activeJoinToken) return;
     currentSession = null;
     clearPreviewCache();
 
+    const applyJoinPhase = (phase) => {
+      const step = JOIN_PHASES[String(phase || "")];
+      if (!step) return;
+      setJoinProgress(step.value, step.label);
+    };
     const maybeTestOpenDrive = globalThis.__PEARDROPS_TEST_OPEN_DRIVE__;
     const openDrive =
       typeof maybeTestOpenDrive === "function"
-        ? (parsed) => maybeTestOpenDrive(parsed)
+        ? (parsed, _options = {}) => maybeTestOpenDrive(parsed)
         : async (parsed) => {
-            setJoinProgress(52, "Connecting to peer...");
-            return openDriveFromInvite(parsed);
+            return openDriveFromInvite(parsed, {
+              onPhase: applyJoinPhase,
+            });
           };
 
-    setJoinProgress(32, "Waiting for peer drive manifest...");
+    setJoinProgress(10, "Parsing invite...");
     const { manifest, session } = await loadManifestFromInvite(invite, {
       openDrive,
+      onPhase: applyJoinPhase,
     });
     if (token !== activeJoinToken) {
       await safeClose(session);
@@ -554,7 +579,7 @@ async function joinInvite() {
     currentEntries = Array.isArray(manifest.files) ? manifest.files : [];
     selectedEntryKeys = new Set();
 
-    setJoinProgress(90, "Rendering drive contents...");
+    setJoinProgress(98, "Rendering drive contents...");
     renderFileRows(currentEntries);
     setJoinProgress(100, "Drive ready");
 
@@ -586,32 +611,39 @@ function setJoinLoading(loading) {
 }
 
 function startJoinProgress(label = "Connecting to peer...") {
-  stopJoinProgress(false)
-  joinProgressValue = 8
-  if (joinProgressEl) joinProgressEl.classList.remove("hidden")
-  if (joinProgressLabelEl) joinProgressLabelEl.textContent = label
-  if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
+  stopJoinProgress(false);
+  joinProgressValue = 4;
+  if (joinProgressEl) joinProgressEl.classList.remove("hidden");
+  if (joinProgressLabelEl) joinProgressLabelEl.textContent = label;
+  if (joinProgressFillEl) {
+    joinProgressFillEl.style.width = `${joinProgressValue}%`;
+  }
   joinProgressTimer = setInterval(() => {
-    if (!joinInFlight) return
-    if (joinProgressValue >= 92) return
-    joinProgressValue = Math.min(92, joinProgressValue + 2)
-    if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
-  }, 220)
+    if (!joinInFlight) return;
+    if (joinProgressValue >= 88) return;
+    joinProgressValue = Math.min(88, joinProgressValue + 1);
+    if (joinProgressFillEl) {
+      joinProgressFillEl.style.width = `${joinProgressValue}%`;
+    }
+  }, 420);
 }
 
 function setJoinProgress(value, label = "") {
-  joinProgressValue = Math.max(0, Math.min(100, Number(value || 0)))
-  if (joinProgressEl) joinProgressEl.classList.remove("hidden")
-  if (joinProgressFillEl) joinProgressFillEl.style.width = `${joinProgressValue}%`
-  if (label && joinProgressLabelEl) joinProgressLabelEl.textContent = label
+  const nextValue = Math.max(0, Math.min(100, Number(value || 0)));
+  joinProgressValue = Math.max(joinProgressValue, nextValue);
+  if (joinProgressEl) joinProgressEl.classList.remove("hidden");
+  if (joinProgressFillEl) {
+    joinProgressFillEl.style.width = `${joinProgressValue}%`;
+  }
+  if (label && joinProgressLabelEl) joinProgressLabelEl.textContent = label;
 }
 
 function stopJoinProgress(hide = true) {
   if (joinProgressTimer) {
-    clearInterval(joinProgressTimer)
-    joinProgressTimer = null
+    clearInterval(joinProgressTimer);
+    joinProgressTimer = null;
   }
-  if (hide && joinProgressEl) joinProgressEl.classList.add("hidden")
+  if (hide && joinProgressEl) joinProgressEl.classList.add("hidden");
 }
 
 function renderFileRows(entries) {
@@ -1145,9 +1177,9 @@ async function maybeShareMediaToPhotos(blob, entry) {
   if (!isLikelyMobileBrowser()) return false;
   if (!isMediaFileEntry(entry)) return false;
   if (typeof navigator?.share !== "function") return false;
-  if (typeof File !== "function") return false;
+  if (typeof globalThis.File !== "function") return false;
 
-  const file = new File([blob], String(entry?.name || "download"), {
+  const file = new globalThis.File([blob], String(entry?.name || "download"), {
     type: String(entry?.mimeType || blob.type || "application/octet-stream"),
   });
 
@@ -1243,7 +1275,7 @@ async function openDriveViaRelay(parsed) {
   };
 }
 
-async function openDriveFromInvite(parsed) {
+async function openDriveFromInvite(parsed, options = {}) {
   const relayUrl = relayUrlForInvite(parsed, location);
   const [{ default: DHT }, { default: RelayStream }, { default: b4a }] =
     await Promise.all([
@@ -1253,11 +1285,16 @@ async function openDriveFromInvite(parsed) {
     ]);
 
   if (parsed.signalKey) {
-    return openDriveViaWebRtcInvite(parsed, relayUrl, {
-      DHT,
-      RelayStream,
-      b4a,
-    });
+    return openDriveViaWebRtcInvite(
+      parsed,
+      relayUrl,
+      {
+        DHT,
+        RelayStream,
+        b4a,
+      },
+      options,
+    );
   }
 
   return openDriveViaRelay(parsed);

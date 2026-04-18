@@ -2,23 +2,29 @@ import { parseInvite } from "./invite.js";
 
 export async function loadManifestFromInvite(
   invite,
-  { openDrive, waitMs = 10000, retryMs = 150 },
+  { openDrive, waitMs = 10000, retryMs = 150, onPhase = null },
 ) {
   if (typeof openDrive !== "function") {
     throw new Error("openDrive must be provided");
   }
+  const emitPhase = typeof onPhase === "function" ? onPhase : () => {};
 
+  emitPhase("parse-invite");
   const parsed = parseInvite(invite);
-  const session = await openDrive(parsed);
+  emitPhase("open-drive");
+  const session = await openDrive(parsed, { onPhase });
 
   try {
+    emitPhase("manifest-request");
     const rawManifest = await waitForEntry(
       session.drive,
       "/manifest.json",
       waitMs,
       retryMs,
     );
+    emitPhase("manifest-received");
     const manifest = parseManifestPayload(rawManifest);
+    emitPhase("manifest-parsed");
 
     return {
       manifest,

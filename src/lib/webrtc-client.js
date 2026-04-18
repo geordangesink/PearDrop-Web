@@ -1,18 +1,31 @@
-export async function openDriveViaWebRtcInvite(parsed, relayUrl, libs) {
+export async function openDriveViaWebRtcInvite(
+  parsed,
+  relayUrl,
+  libs,
+  options = {},
+) {
   const { DHT, RelayStream, b4a } = libs;
+  const emitPhase =
+    typeof options?.onPhase === "function" ? options.onPhase : () => {};
   if (!parsed.signalKey) throw new Error("Invite is missing signal key");
   if (!parsed.nativeInvite) {
     throw new Error("Invite is missing native invite context");
   }
 
+  emitPhase("relay-connect");
   const relaySocket = new WebSocket(relayUrl);
   await onceWebSocketOpen(relaySocket);
+  emitPhase("relay-open");
 
+  emitPhase("dht-init");
   const dht = new DHT(new RelayStream(true, relaySocket));
+  emitPhase("signal-connect");
   const signalSocket = dht.connect(b4a.from(parsed.signalKey, "hex"));
   await onceStreamOpen(signalSocket);
+  emitPhase("signal-open");
   const signal = createLineSignal(signalSocket, b4a);
 
+  emitPhase("rtc-setup");
   const pc = new RTCPeerConnection({ iceServers: [] });
   const channel = pc.createDataChannel("peardrops");
   const peer = createDataChannelRpc(channel);
@@ -34,15 +47,20 @@ export async function openDriveViaWebRtcInvite(parsed, relayUrl, libs) {
     }
   };
 
+  emitPhase("offer-create");
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
+  emitPhase("offer-send");
   signal.send({
     type: "offer",
     sdp: offer.sdp,
   });
 
+  emitPhase("peer-handshake");
   await waitForChannelOpen(channel, 10000);
+  emitPhase("channel-open");
 
+  emitPhase("drive-ready");
   return {
     drive: {
       async get(drivePath) {
