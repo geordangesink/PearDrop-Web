@@ -227,10 +227,14 @@ app.innerHTML = `
     </div>
     <div class="grid">
       ${downloadCard("Windows", ".exe", APP_LINKS.windows)}
-      ${downloadCard("macOS", "Apple Silicon (arm64)", APP_LINKS.macArm64)}
-      ${downloadCard("macOS", "Intel (x64)", APP_LINKS.macX64)}
-      ${downloadCard("Linux", "arm64 (.AppImage)", APP_LINKS.linuxArm64)}
-      ${downloadCard("Linux", "x64 (.AppImage)", APP_LINKS.linuxX64)}
+      ${downloadCardWithOptions("macOS", ".dmg", [
+        { label: "Apple Silicon (arm64)", href: APP_LINKS.macArm64 },
+        { label: "Intel (x64)", href: APP_LINKS.macX64 },
+      ])}
+      ${downloadCardWithOptions("Linux", ".AppImage", [
+        { label: "arm64", href: APP_LINKS.linuxArm64 },
+        { label: "x64", href: APP_LINKS.linuxX64 },
+      ])}
       ${downloadCard("Mobile", "iOS / Android", "/download.html")}
     </div>
   </section>
@@ -255,6 +259,26 @@ function downloadCard(name, ext, href) {
       ${
         url
           ? `<a class="btn alt" href="${escapeHtmlAttr(url)}">Download</a>`
+          : `<span class="btn alt" style="opacity:.55; cursor:default;">Coming soon</span>`
+      }
+    </article>
+  `;
+}
+
+function downloadCardWithOptions(name, ext, options = []) {
+  const available = options.filter((item) => String(item?.href || "").trim());
+  return `
+    <article class="card">
+      <h2>${escapeHtml(name)}</h2>
+      <p>${escapeHtml(ext)}</p>
+      ${
+        available.length > 0
+          ? available
+              .map(
+                (item) =>
+                  `<a class="btn alt" href="${escapeHtmlAttr(item.href)}">${escapeHtml(item.label || "Download")}</a>`,
+              )
+              .join("")
           : `<span class="btn alt" style="opacity:.55; cursor:default;">Coming soon</span>`
       }
     </article>

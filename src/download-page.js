@@ -140,10 +140,14 @@ app.innerHTML = `
 
   <section id="all-downloads" class="grid">
     ${downloadCard("Windows (.exe)", APP_LINKS.windows)}
-    ${downloadCard("macOS (Apple Silicon, arm64)", APP_LINKS.macArm64)}
-    ${downloadCard("macOS (Intel, x64)", APP_LINKS.macX64)}
-    ${downloadCard("Linux (arm64)", APP_LINKS.linuxArm64)}
-    ${downloadCard("Linux (x64)", APP_LINKS.linuxX64)}
+    ${downloadCardWithOptions("macOS (.dmg)", [
+      { label: "Apple Silicon (arm64)", href: APP_LINKS.macArm64 },
+      { label: "Intel (x64)", href: APP_LINKS.macX64 },
+    ])}
+    ${downloadCardWithOptions("Linux (.AppImage)", [
+      { label: "arm64", href: APP_LINKS.linuxArm64 },
+      { label: "x64", href: APP_LINKS.linuxX64 },
+    ])}
     ${downloadCard("iOS", APP_LINKS.ios)}
     ${downloadCard("Android", APP_LINKS.android)}
     ${
@@ -177,6 +181,32 @@ function downloadCard(title, href, note = "") {
     <article class="card">
       <h2 class="label">${escapeHtml(title)}</h2>
       <a class="btn alt" href="${escapeHtmlAttr(href)}">Download</a>
+      ${note ? `<p class="muted" style="margin-top:8px;">${escapeHtml(note)}</p>` : ""}
+    </article>
+  `;
+}
+
+function downloadCardWithOptions(title, options = [], note = "") {
+  const available = options.filter((item) => String(item?.href || "").trim());
+  if (available.length === 0) {
+    return `
+      <article class="card">
+        <h2 class="label">${escapeHtml(title)}</h2>
+        <p class="muted">Coming soon.</p>
+      </article>
+    `;
+  }
+  return `
+    <article class="card">
+      <h2 class="label">${escapeHtml(title)}</h2>
+      <div class="actions" style="margin-top:0;">
+        ${available
+          .map(
+            (item) =>
+              `<a class="btn alt" href="${escapeHtmlAttr(item.href)}">${escapeHtml(item.label || "Download")}</a>`,
+          )
+          .join("")}
+      </div>
       ${note ? `<p class="muted" style="margin-top:8px;">${escapeHtml(note)}</p>` : ""}
     </article>
   `;
