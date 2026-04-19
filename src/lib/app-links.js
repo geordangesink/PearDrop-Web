@@ -2,10 +2,14 @@ const FALLBACK_RELEASES_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
 const FALLBACK_WINDOWS_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-Setup.exe";
-const FALLBACK_MAC_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop.dmg";
-const FALLBACK_LINUX_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop.AppImage";
+const FALLBACK_MAC_ARM64_URL =
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-macos-arm64.dmg";
+const FALLBACK_MAC_X64_URL =
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-macos-x64.dmg";
+const FALLBACK_LINUX_ARM64_URL =
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-arm64.AppImage";
+const FALLBACK_LINUX_X64_URL =
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-x64.AppImage";
 const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
@@ -16,7 +20,10 @@ function resolveWindowsInstallerUrl() {
 
   // Temporary guard: ignore legacy Railway-hosted Windows links and prefer GitHub releases.
   const lowered = configured.toLowerCase();
-  if (lowered.includes(".up.railway.app/") || lowered.includes("/downloads/win32/")) {
+  if (
+    lowered.includes(".up.railway.app/") ||
+    lowered.includes("/downloads/win32/")
+  ) {
     return FALLBACK_WINDOWS_URL;
   }
 
@@ -26,8 +33,12 @@ function resolveWindowsInstallerUrl() {
 export const APP_LINKS = {
   siteOrigin: String(ENV.VITE_PUBLIC_SITE_ORIGIN || FALLBACK_SITE_ORIGIN),
   windows: resolveWindowsInstallerUrl(),
-  mac: String(ENV.VITE_MAC_INSTALLER_URL || FALLBACK_MAC_URL),
-  linux: String(ENV.VITE_LINUX_INSTALLER_URL || FALLBACK_LINUX_URL),
+  macArm64: String(ENV.VITE_MAC_INSTALLER_ARM64_URL || FALLBACK_MAC_ARM64_URL),
+  macX64: String(ENV.VITE_MAC_INSTALLER_X64_URL || FALLBACK_MAC_X64_URL),
+  linuxArm64: String(
+    ENV.VITE_LINUX_INSTALLER_ARM64_URL || FALLBACK_LINUX_ARM64_URL,
+  ),
+  linuxX64: String(ENV.VITE_LINUX_INSTALLER_X64_URL || FALLBACK_LINUX_X64_URL),
   ios: String(ENV.VITE_IOS_APP_URL || ""),
   android: String(ENV.VITE_ANDROID_APP_URL || ""),
   releases: String(ENV.VITE_RELEASES_URL || FALLBACK_RELEASES_URL),
@@ -44,21 +55,33 @@ export function detectClientPlatform(uaInput = "") {
   const isWindows = ua.includes("windows");
   const isMac = ua.includes("mac os x") && !isIOS;
   const isLinux = ua.includes("linux") && !isAndroid;
+  const desktopArch = detectDesktopArch(ua);
 
-  if (isIOS) return { id: "ios", label: "iOS", group: "mobile" };
-  if (isAndroid) return { id: "android", label: "Android", group: "mobile" };
-  if (isWindows) return { id: "windows", label: "Windows", group: "desktop" };
-  if (isMac) return { id: "mac", label: "macOS", group: "desktop" };
-  if (isLinux) return { id: "linux", label: "Linux", group: "desktop" };
-  return { id: "unknown", label: "Your device", group: "unknown" };
+  if (isIOS) return { id: "ios", label: "iOS", group: "mobile", arch: "" };
+  if (isAndroid)
+    return { id: "android", label: "Android", group: "mobile", arch: "" };
+  if (isWindows)
+    return { id: "windows", label: "Windows", group: "desktop", arch: "" };
+  if (isMac)
+    return { id: "mac", label: "macOS", group: "desktop", arch: desktopArch };
+  if (isLinux)
+    return { id: "linux", label: "Linux", group: "desktop", arch: desktopArch };
+  return { id: "unknown", label: "Your device", group: "unknown", arch: "" };
 }
 
-export function installerUrlForPlatform(platformId) {
+export function installerUrlForPlatform(platformId, platformInfo = null) {
+  const arch =
+    String(platformInfo?.arch || "")
+      .trim()
+      .toLowerCase() || "";
   if (platformId === "ios") return APP_LINKS.ios;
   if (platformId === "android") return APP_LINKS.android;
   if (platformId === "windows") return APP_LINKS.windows;
-  if (platformId === "mac") return APP_LINKS.mac;
-  if (platformId === "linux") return APP_LINKS.linux;
+  if (platformId === "mac")
+    return arch === "x64" ? APP_LINKS.macX64 : APP_LINKS.macArm64;
+  if (platformId === "linux") {
+    return arch === "arm64" ? APP_LINKS.linuxArm64 : APP_LINKS.linuxX64;
+  }
   return "";
 }
 
@@ -139,4 +162,24 @@ function hasInviteCoordinates(searchParams) {
     searchParams.has("web") ||
     searchParams.has("signal")
   );
+}
+
+function detectDesktopArch(ua) {
+  const lowered = String(ua || "").toLowerCase();
+  if (
+    lowered.includes("arm64") ||
+    lowered.includes("aarch64") ||
+    lowered.includes("armv8")
+  ) {
+    return "arm64";
+  }
+  if (
+    lowered.includes("x86_64") ||
+    lowered.includes("amd64") ||
+    lowered.includes("x64") ||
+    lowered.includes("intel")
+  ) {
+    return "x64";
+  }
+  return "";
 }

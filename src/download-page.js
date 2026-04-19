@@ -7,7 +7,7 @@ import {
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 const platformInfo = detectClientPlatform();
-const preferredUrl = installerUrlForPlatform(platformInfo.id);
+const preferredUrl = installerUrlForPlatform(platformInfo.id, platformInfo);
 const auto = params.get("auto") === "1";
 
 app.innerHTML = `
@@ -140,8 +140,10 @@ app.innerHTML = `
 
   <section id="all-downloads" class="grid">
     ${downloadCard("Windows (.exe)", APP_LINKS.windows)}
-    ${downloadCard("macOS (.dmg)", APP_LINKS.mac)}
-    ${downloadCard("Linux (.AppImage)", APP_LINKS.linux)}
+    ${downloadCard("macOS (Apple Silicon, arm64)", APP_LINKS.macArm64)}
+    ${downloadCard("macOS (Intel, x64)", APP_LINKS.macX64)}
+    ${downloadCard("Linux (arm64)", APP_LINKS.linuxArm64)}
+    ${downloadCard("Linux (x64)", APP_LINKS.linuxX64)}
     ${downloadCard("iOS", APP_LINKS.ios)}
     ${downloadCard("Android", APP_LINKS.android)}
     ${

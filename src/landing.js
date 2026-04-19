@@ -6,7 +6,7 @@ import {
 
 const app = document.getElementById("app");
 const platform = detectClientPlatform();
-const recommendedInstaller = installerUrlForPlatform(platform.id);
+const recommendedInstaller = installerUrlForPlatform(platform.id, platform);
 
 app.innerHTML = `
   <style>
@@ -117,7 +117,7 @@ app.innerHTML = `
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
     }
     .card {
@@ -227,8 +227,10 @@ app.innerHTML = `
     </div>
     <div class="grid">
       ${downloadCard("Windows", ".exe", APP_LINKS.windows)}
-      ${downloadCard("macOS", ".dmg", APP_LINKS.mac)}
-      ${downloadCard("Linux", ".AppImage", APP_LINKS.linux)}
+      ${downloadCard("macOS", "Apple Silicon (arm64)", APP_LINKS.macArm64)}
+      ${downloadCard("macOS", "Intel (x64)", APP_LINKS.macX64)}
+      ${downloadCard("Linux", "arm64 (.AppImage)", APP_LINKS.linuxArm64)}
+      ${downloadCard("Linux", "x64 (.AppImage)", APP_LINKS.linuxX64)}
       ${downloadCard("Mobile", "iOS / Android", "/download.html")}
     </div>
   </section>
