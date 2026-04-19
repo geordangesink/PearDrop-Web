@@ -7,6 +7,10 @@ import {
 const app = document.getElementById("app");
 const platform = detectClientPlatform();
 const recommendedInstaller = installerUrlForPlatform(platform.id, platform);
+const recommendedActions = resolveRecommendedActions(
+  platform,
+  recommendedInstaller,
+);
 
 app.innerHTML = `
   <style>
@@ -211,9 +215,14 @@ app.innerHTML = `
     <p class="sub">Share files with one link. Fast in app, instant in browser.</p>
     <div class="actions">
       ${
-        recommendedInstaller
-          ? `<a class="btn primary" href="${escapeHtmlAttr(recommendedInstaller)}">Download for ${escapeHtml(platform.label)}</a>`
+        recommendedActions.primaryHref
+          ? `<a class="btn primary" href="${escapeHtmlAttr(recommendedActions.primaryHref)}">${escapeHtml(recommendedActions.primaryLabel || `Download for ${platform.label}`)}</a>`
           : `<a class="btn primary" href="/download.html">Download App</a>`
+      }
+      ${
+        recommendedActions.secondaryHref
+          ? `<a class="btn alt" href="${escapeHtmlAttr(recommendedActions.secondaryHref)}">${escapeHtml(recommendedActions.secondaryLabel || "Other architecture")}</a>`
+          : ""
       }
       <a class="btn alt" href="/download.html">All Downloads</a>
       <a class="btn alt" href="/web-client/">Use in Browser</a>
@@ -283,6 +292,32 @@ function downloadCardWithOptions(name, ext, options = []) {
       }
     </article>
   `;
+}
+
+function resolveRecommendedActions(platformInfo, fallbackInstaller) {
+  const id = String(platformInfo?.id || "").toLowerCase();
+  if (id === "mac") {
+    return {
+      primaryHref: APP_LINKS.macArm64,
+      primaryLabel: "Download for macOS",
+      secondaryHref: APP_LINKS.macX64,
+      secondaryLabel: "macOS Intel (x64)",
+    };
+  }
+  if (id === "linux") {
+    return {
+      primaryHref: APP_LINKS.linuxX64,
+      primaryLabel: "Download for Linux",
+      secondaryHref: APP_LINKS.linuxArm64,
+      secondaryLabel: "Linux arm64",
+    };
+  }
+  return {
+    primaryHref: fallbackInstaller,
+    primaryLabel: `Download for ${platformInfo?.label || "your device"}`,
+    secondaryHref: "",
+    secondaryLabel: "",
+  };
 }
 
 function escapeHtml(value) {

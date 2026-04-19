@@ -8,6 +8,7 @@ const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 const platformInfo = detectClientPlatform();
 const preferredUrl = installerUrlForPlatform(platformInfo.id, platformInfo);
+const recommendedActions = resolveRecommendedActions(platformInfo);
 const auto = params.get("auto") === "1";
 
 app.innerHTML = `
@@ -131,9 +132,14 @@ app.innerHTML = `
     <strong>Recommended for this device</strong>
     <div class="actions">
       ${
-        preferredUrl
-          ? `<a id="recommended-link" class="btn" href="${escapeHtmlAttr(preferredUrl)}">Download for ${escapeHtml(platformInfo.label)}</a>`
+        recommendedActions.primaryHref
+          ? `<a id="recommended-link" class="btn" href="${escapeHtmlAttr(recommendedActions.primaryHref)}">${escapeHtml(recommendedActions.primaryLabel || `Download for ${platformInfo.label}`)}</a>`
           : `<a id="recommended-link" class="btn alt" href="#all-downloads">View all download options</a>`
+      }
+      ${
+        recommendedActions.secondaryHref
+          ? `<a class="btn alt" href="${escapeHtmlAttr(recommendedActions.secondaryHref)}">${escapeHtml(recommendedActions.secondaryLabel || "Other architecture")}</a>`
+          : ""
       }
     </div>
   </section>
@@ -162,10 +168,36 @@ app.innerHTML = `
   </section>
 `;
 
-if (auto && preferredUrl) {
+if (auto && recommendedActions.primaryHref) {
   setTimeout(() => {
-    location.href = preferredUrl;
+    location.href = recommendedActions.primaryHref;
   }, 180);
+}
+
+function resolveRecommendedActions(platform) {
+  const id = String(platform?.id || "").toLowerCase();
+  if (id === "mac") {
+    return {
+      primaryHref: APP_LINKS.macArm64,
+      primaryLabel: "Download for macOS",
+      secondaryHref: APP_LINKS.macX64,
+      secondaryLabel: "macOS Intel (x64)",
+    };
+  }
+  if (id === "linux") {
+    return {
+      primaryHref: APP_LINKS.linuxX64,
+      primaryLabel: "Download for Linux",
+      secondaryHref: APP_LINKS.linuxArm64,
+      secondaryLabel: "Linux arm64",
+    };
+  }
+  return {
+    primaryHref: preferredUrl,
+    primaryLabel: `Download for ${platform?.label || "your device"}`,
+    secondaryHref: "",
+    secondaryLabel: "",
+  };
 }
 
 function downloadCard(title, href, note = "") {
