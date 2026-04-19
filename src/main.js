@@ -164,6 +164,22 @@ app.innerHTML = `
       height: 100%;
       object-fit: cover;
     }
+    .preview-skeleton {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: linear-gradient(100deg, #d8e2eb 20%, #eef3f8 45%, #d8e2eb 70%);
+      background-size: 220% 100%;
+      animation: previewShimmer 1.2s linear infinite;
+    }
+    @keyframes previewShimmer {
+      from {
+        background-position: 100% 0;
+      }
+      to {
+        background-position: -100% 0;
+      }
+    }
     .download-btn {
       margin-top: 0;
       padding: 8px 12px;
@@ -385,6 +401,12 @@ const downloadProgressSubEl = document.getElementById("download-progress-sub");
 const downloadProgressFillEl = document.getElementById(
   "download-progress-fill",
 );
+const downloadProgressState = {
+  startedAt: 0,
+  total: 0,
+  mode: "",
+  label: "",
+};
 const filesEl = document.getElementById("files");
 const inviteEl = document.getElementById("invite");
 const joinBtn = document.getElementById("join");
@@ -411,6 +433,8 @@ let currentSession = null;
 let currentEntries = [];
 let selectedEntryKeys = new Set();
 const previewCache = new Map();
+const thumbnailCache = new Map();
+const thumbnailLoading = new Set();
 const objectUrls = new Set();
 let joinInFlight = false;
 let activeJoinToken = 0;
@@ -673,19 +697,23 @@ function renderFileRows(entries) {
     filesEl.appendChild(tr);
   }
   syncBulkSelectionUi();
+  queueImageThumbnailLoads(entries);
 }
 
 function previewButtonHtml(entry, index) {
   const mime = String(entry?.mimeType || "").toLowerCase();
   const ext = fileExt(entry?.name || "");
+  const key = entryKey(entry, index);
   const isImage =
     mime.startsWith("image/") ||
     ["png", "jpg", "jpeg", "gif", "webp"].includes(ext);
   if (isImage) {
-    const cached = previewCache.get(entry.drivePath || "");
-    if (cached && cached.kind === "image") {
-      return `<button class="preview-btn" data-action="preview" data-index="${index}"><img alt="preview" src="${cached.url}" /></button>`;
+    const thumb = thumbnailCache.get(key);
+    if (thumb) {
+      return `<button class="preview-btn" data-action="preview" data-index="${index}"><img alt="preview" src="${thumb}" loading="lazy" /></button>`;
     }
+    const waiting = thumbnailLoading.has(key);
+    return `<button class="preview-btn" data-action="preview" data-index="${index}"><span class="preview-skeleton" aria-label="${escapeHtml(waiting ? "Loading preview..." : "Preview pending")}"></span></button>`;
   }
   if (
     mime.startsWith("video/") ||
@@ -867,6 +895,7 @@ async function downloadSelectedAsTgz() {
   const useByteProgress = knownTotalBytes > 0;
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
   let packedBytes = 0;
+  const chunkSize = 64 * 1024;
   showDownloadProgress(
     0,
     totalForProgress,
@@ -884,14 +913,34 @@ async function downloadSelectedAsTgz() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count",
       );
-      const bytes = await readInviteEntry(currentSession, entry);
+      const baseAtStart = packedBytes;
+      let fileDone = 0;
+      const fileChunks = [];
+      for await (const chunk of readInviteEntryChunks(currentSession, entry, {
+        chunkSize,
+      })) {
+        const bytes =
+          chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
+        if (!bytes.byteLength) continue;
+        fileChunks.push(bytes);
+        fileDone += bytes.byteLength;
+        packedBytes = useByteProgress ? baseAtStart + fileDone : i;
+        showDownloadProgress(
+          useByteProgress ? packedBytes : i,
+          totalForProgress,
+          "Packing selected files...",
+          `Current file: ${entry?.name || `file-${i + 1}`}`,
+          useByteProgress ? "bytes" : "count",
+        );
+      }
+      const bytes = concatBytes(fileChunks);
       files.push({
         name: sanitizeTarName(entry.name || "file.bin"),
         bytes,
       });
-      packedBytes += useByteProgress
-        ? bytes.byteLength || Math.max(0, Number(entry?.byteLength || 0))
-        : 1;
+      packedBytes = useByteProgress
+        ? baseAtStart + Math.max(fileDone, Number(entry?.byteLength || 0))
+        : i + 1;
       showDownloadProgress(
         useByteProgress ? packedBytes : i + 1,
         totalForProgress,
@@ -928,17 +977,38 @@ function showDownloadProgress(
   }
   const safeTotal = Math.max(1, Number(total || 0));
   const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
+  const normalizedMode = String(mode || "count");
+  const normalizedLabel = String(label || "Downloading files...");
+  if (
+    !downloadProgressState.startedAt ||
+    downloadProgressState.total !== safeTotal ||
+    downloadProgressState.mode !== normalizedMode ||
+    downloadProgressState.label !== normalizedLabel ||
+    safeDone === 0
+  ) {
+    downloadProgressState.startedAt = Date.now();
+    downloadProgressState.total = safeTotal;
+    downloadProgressState.mode = normalizedMode;
+    downloadProgressState.label = normalizedLabel;
+  }
   const percent = Math.round((safeDone / safeTotal) * 100);
   const progressText =
-    mode === "bytes"
+    normalizedMode === "bytes"
       ? `${percent}% (${formatBytes(safeDone)} / ${formatBytes(safeTotal)})`
       : `${safeDone}/${safeTotal}`;
+  const etaMs = estimateRemainingMs(
+    safeDone,
+    safeTotal,
+    downloadProgressState.startedAt,
+  );
+  const etaText = etaMs ? `ETA ${formatEta(etaMs)}` : "";
   downloadProgressEl.classList.remove("hidden");
-  downloadProgressLabelEl.textContent = `${label} ${progressText}`;
+  downloadProgressLabelEl.textContent = `${normalizedLabel} ${progressText}`;
   if (downloadProgressSubEl) {
     const sub = String(subtitle || "").trim();
-    downloadProgressSubEl.textContent = sub;
-    downloadProgressSubEl.classList.toggle("hidden", !sub);
+    const nextSub = sub && etaText ? `${sub} • ${etaText}` : sub || etaText;
+    downloadProgressSubEl.textContent = nextSub;
+    downloadProgressSubEl.classList.toggle("hidden", !nextSub);
   }
   downloadProgressFillEl.style.width = `${percent}%`;
 }
@@ -957,7 +1027,36 @@ function hideDownloadProgress() {
     downloadProgressSubEl.textContent = "";
     downloadProgressSubEl.classList.add("hidden");
   }
+  downloadProgressState.startedAt = 0;
+  downloadProgressState.total = 0;
+  downloadProgressState.mode = "";
+  downloadProgressState.label = "";
   downloadProgressEl.classList.add("hidden");
+}
+
+function estimateRemainingMs(done, total, startedAtMs) {
+  const safeTotal = Math.max(0, Number(total || 0));
+  const safeDone = Math.max(0, Number(done || 0));
+  const startedAt = Number(startedAtMs || 0);
+  if (!safeTotal || safeDone <= 0 || safeDone >= safeTotal || !startedAt) {
+    return null;
+  }
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+  if (elapsedMs < 1500) return null;
+  const ratePerMs = safeDone / elapsedMs;
+  if (!Number.isFinite(ratePerMs) || ratePerMs <= 0) return null;
+  return (safeTotal - safeDone) / ratePerMs;
+}
+
+function formatEta(ms) {
+  const seconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${rem}s`;
+  const hours = Math.floor(minutes / 60);
+  const minRem = minutes % 60;
+  return `${hours}h ${minRem}m`;
 }
 
 function getSelectedEntries() {
@@ -1131,9 +1230,118 @@ function closePreview() {
 
 function clearPreviewCache() {
   previewCache.clear();
+  thumbnailCache.clear();
+  thumbnailLoading.clear();
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls.clear();
   closePreview();
+}
+
+function queueImageThumbnailLoads(entries) {
+  if (!currentSession || !Array.isArray(entries) || !entries.length) return;
+  const sessionAtStart = currentSession;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!isImageEntry(entry)) continue;
+    const key = entryKey(entry, i);
+    if (thumbnailCache.has(key) || thumbnailLoading.has(key)) continue;
+    thumbnailLoading.add(key);
+    void loadImageThumbnail(entry, key, sessionAtStart);
+  }
+}
+
+async function loadImageThumbnail(entry, key, sessionAtStart) {
+  try {
+    const bytes = await readInviteEntry(sessionAtStart, entry);
+    if (sessionAtStart !== currentSession) return;
+    const mime = String(entry?.mimeType || "").toLowerCase();
+    const blob = new Blob([bytes], {
+      type: mime || "application/octet-stream",
+    });
+    const thumbUrl = await makeThumbnailUrl(blob, 52);
+    if (!thumbUrl) return;
+    objectUrls.add(thumbUrl);
+    thumbnailCache.set(key, thumbUrl);
+  } catch {
+    // keep fallback preview icon when thumbnail fails
+  } finally {
+    thumbnailLoading.delete(key);
+    if (sessionAtStart === currentSession) {
+      renderFileRows(currentEntries);
+    }
+  }
+}
+
+async function makeThumbnailUrl(blob, maxEdge = 52) {
+  const safeEdge = Math.max(24, Number(maxEdge || 52));
+  let sourceWidth = 0;
+  let sourceHeight = 0;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  if (typeof globalThis.createImageBitmap === "function") {
+    const bitmap = await globalThis.createImageBitmap(blob);
+    sourceWidth = Number(bitmap.width || 0);
+    sourceHeight = Number(bitmap.height || 0);
+    if (!sourceWidth || !sourceHeight) {
+      bitmap.close?.();
+      return "";
+    }
+    const scale = Math.min(1, safeEdge / Math.max(sourceWidth, sourceHeight));
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    return await canvasToObjectUrl(canvas);
+  }
+
+  const srcUrl = URL.createObjectURL(blob);
+  try {
+    const image = await loadImageElement(srcUrl);
+    sourceWidth = Number(image.naturalWidth || image.width || 0);
+    sourceHeight = Number(image.naturalHeight || image.height || 0);
+    if (!sourceWidth || !sourceHeight) return "";
+    const scale = Math.min(1, safeEdge / Math.max(sourceWidth, sourceHeight));
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return await canvasToObjectUrl(canvas);
+  } finally {
+    URL.revokeObjectURL(srcUrl);
+  }
+}
+
+function loadImageElement(srcUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new globalThis.Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image decode failed"));
+    img.src = srcUrl;
+  });
+}
+
+function canvasToObjectUrl(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          resolve("");
+          return;
+        }
+        resolve(URL.createObjectURL(blob));
+      },
+      "image/webp",
+      0.75,
+    );
+  });
+}
+
+function isImageEntry(entry) {
+  const mime = String(entry?.mimeType || "").toLowerCase();
+  const ext = fileExt(entry?.name || "");
+  if (mime.startsWith("image/")) return true;
+  return ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif"].includes(ext);
 }
 
 function sleep(ms) {
