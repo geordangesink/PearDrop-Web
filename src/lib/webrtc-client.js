@@ -89,6 +89,7 @@ export async function openDriveViaWebRtcInvite(
   let latestIceStatsSummary = null;
   let stopped = false;
   let offerRetryTimer = null;
+  let requestIceRestart = () => {};
 
   const stopRtc = async () => {
     if (stopped) return;
@@ -167,10 +168,18 @@ export async function openDriveViaWebRtcInvite(
     }
     if (message.type === "host-ice-state") {
       hostIceState = String(message.state || "");
+      const hostIce = String(hostIceState || "").toLowerCase();
+      if (receivedAnswer && (hostIce === "failed" || hostIce === "disconnected")) {
+        requestIceRestart({ force: true });
+      }
       return;
     }
     if (message.type === "host-conn-state") {
       hostConnState = String(message.state || "");
+      const hostConn = String(hostConnState || "").toLowerCase();
+      if (receivedAnswer && (hostConn === "failed" || hostConn === "disconnected")) {
+        requestIceRestart({ force: true });
+      }
       return;
     }
     if (message.type === "host-net-status") {
@@ -340,7 +349,7 @@ export async function openDriveViaWebRtcInvite(
     }
   };
 
-  const tryIceRestart = async () => {
+  const tryIceRestart = async ({ force = false } = {}) => {
     if (stopped) return false;
     if (!receivedAnswer) return false;
     if (channel.readyState === "open") return false;
@@ -352,10 +361,14 @@ export async function openDriveViaWebRtcInvite(
     const pairInProgress = Number(latestIceStatsSummary?.candidatePairs?.inProgress || 0);
     const remoteTotal = Number(latestIceStatsSummary?.remoteCandidates?.total || 0);
     // If ICE is actively probing candidate pairs, avoid restart churn that can reset progress.
-    if (pairTotal > 0 && pairInProgress > 0 && remoteTotal > 0) return false;
+    // Allow forced restart when one side already reports failed/disconnected.
+    if (!force && pairTotal > 0 && pairInProgress > 0 && remoteTotal > 0) return false;
     iceRestartAttempts += 1;
     await sendOffer({ restartIce: true });
     return true;
+  };
+  requestIceRestart = (options = {}) => {
+    void tryIceRestart(options);
   };
 
   await waitForCondition(
@@ -377,7 +390,11 @@ export async function openDriveViaWebRtcInvite(
   const onConnectionStateMaybeRestart = () => {
     const iceState = String(pc.iceConnectionState || "");
     const connState = String(pc.connectionState || "");
-    if (iceState === "failed" || connState === "failed" || iceState === "disconnected") {
+    if (iceState === "failed" || connState === "failed") {
+      void tryIceRestart({ force: true });
+      return;
+    }
+    if (iceState === "disconnected") {
       void tryIceRestart();
     }
   };
@@ -438,6 +455,12 @@ export async function openDriveViaWebRtcInvite(
       const hostIce = String(hostIceState || "").toLowerCase();
       const hostConn = String(hostConnState || "").toLowerCase();
       if (receivedAnswer && (hostIce === "failed" || hostConn === "failed")) {
+        if (iceRestartAttempts < maxIceRestartAttempts) {
+          void tryIceRestart({ force: true });
+          return "";
+        }
+        const answerAgeMs = answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
+        if (answerAgeMs < Math.max(6000, timing.postAnswerIdleTimeoutMs)) return "";
         return "Host ICE failed before data channel opened";
       }
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
