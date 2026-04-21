@@ -211,6 +211,10 @@ export async function openDriveViaWebRtcInvite(
     if (offerInFlight) return;
     offerInFlight = true;
     try {
+      // New local offer means a new remote ICE generation is expected.
+      // Queue incoming remote candidates until the matching answer is applied.
+      remoteDescriptionSet = false;
+      pendingRemoteCandidates.length = 0;
       emitPhase("offer-create");
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
