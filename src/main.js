@@ -579,13 +579,39 @@ async function joinInvite() {
     clearPreviewCache();
 
     let offerSendCount = 0;
-    const applyJoinPhase = (phase) => {
+    const applyJoinPhase = (phase, details = null) => {
       const step = JOIN_PHASES[String(phase || "")];
       if (!step) return;
       if (String(phase || "") === "offer-send") {
         offerSendCount += 1;
         setJoinProgress(step.value, `Sending offer to peer (${offerSendCount})...`);
         return;
+      }
+      if (String(phase || "") === "peer-handshake") {
+        const pairCounts = details?.pairCounts || null;
+        const localCandidates = details?.localCandidates || null;
+        const remoteCandidates = details?.remoteCandidates || null;
+        if (pairCounts) {
+          const totalPairs = Math.max(0, Number(pairCounts.total || 0));
+          const succeededPairs = Math.max(0, Number(pairCounts.succeeded || 0));
+          const failedPairs = Math.max(0, Number(pairCounts.failed || 0));
+          const inProgressPairs = Math.max(0, Number(pairCounts.inProgress || 0));
+          const weightedDone =
+            succeededPairs + failedPairs + inProgressPairs * 0.45;
+          const ratio = totalPairs > 0 ? Math.min(1, weightedDone / totalPairs) : 0;
+          const handshakeProgress = Math.round(72 + ratio * 7);
+
+          const listText = [
+            `pairs total ${totalPairs}`,
+            `in progress ${inProgressPairs}`,
+            `succeeded ${succeededPairs}`,
+            `failed ${failedPairs}`,
+            `local ${Number(localCandidates?.total || 0)}`,
+            `remote ${Number(remoteCandidates?.total || 0)}`,
+          ].join(" | ");
+          setJoinProgress(handshakeProgress, `Waiting for peer handshake... ${listText}`);
+          return;
+        }
       }
       setJoinProgress(step.value, step.label);
     };

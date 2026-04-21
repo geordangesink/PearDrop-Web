@@ -28,9 +28,9 @@ export async function openDriveViaWebRtcInvite(
   const timing = {
     signalReadyTimeoutMs: Number(options?.timing?.signalReadyTimeoutMs || 2500),
     noAnswerTimeoutMs: Number(options?.timing?.noAnswerTimeoutMs || 12000),
-    handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 38000),
-    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 90000),
-    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 10000),
+    handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 120000),
+    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 120000),
+    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 20000),
     preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 900),
     restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 1200),
     punchLeadMs: Number(options?.timing?.punchLeadMs || 800),
@@ -89,6 +89,7 @@ export async function openDriveViaWebRtcInvite(
   let suggestedPunchAtMs = 0;
   let localCandidateQueue = [];
   let localCandidateFlushTimer = null;
+  let handshakeStatsTimer = null;
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -102,6 +103,10 @@ export async function openDriveViaWebRtcInvite(
     if (localCandidateFlushTimer) {
       clearTimeout(localCandidateFlushTimer);
       localCandidateFlushTimer = null;
+    }
+    if (handshakeStatsTimer) {
+      clearInterval(handshakeStatsTimer);
+      handshakeStatsTimer = null;
     }
     localCandidateQueue = [];
     pc.onicecandidate = null;
@@ -358,6 +363,19 @@ export async function openDriveViaWebRtcInvite(
   pc.onconnectionstatechange = onConnectionStateMaybeRestart;
 
   emitPhase("peer-handshake");
+  handshakeStatsTimer = setInterval(() => {
+    if (stopped) return;
+    void collectIceStatsSummary(pc)
+      .then((summary) => {
+        if (!summary) return;
+        emitPhase("peer-handshake", {
+          pairCounts: summary.candidatePairs || null,
+          localCandidates: summary.localCandidates || null,
+          remoteCandidates: summary.remoteCandidates || null,
+        });
+      })
+      .catch(() => {});
+  }, 1000);
   const handshakeStartedAt = Date.now();
   try {
     await waitForChannelOpen(channel, pc, timing.handshakeTimeoutMs, () => ({
@@ -434,6 +452,10 @@ export async function openDriveViaWebRtcInvite(
     if (offerRetryTimer) {
       clearInterval(offerRetryTimer);
       offerRetryTimer = null;
+    }
+    if (handshakeStatsTimer) {
+      clearInterval(handshakeStatsTimer);
+      handshakeStatsTimer = null;
     }
   }
   emitPhase("channel-open");
