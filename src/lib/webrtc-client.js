@@ -74,6 +74,8 @@ export async function openDriveViaWebRtcInvite(
   let answerReceivedAt = 0;
   let lastLocalCandidateAt = 0;
   let lastRemoteCandidateAt = 0;
+  let hostIceState = "";
+  let hostConnState = "";
   let iceRestartAttempts = 0;
   const maxIceRestartAttempts = 1;
   let stopped = false;
@@ -124,6 +126,14 @@ export async function openDriveViaWebRtcInvite(
     }
     if (message.type === "error") {
       remoteSignalError = String(message.error || message.message || "Remote signaling error");
+      return;
+    }
+    if (message.type === "host-ice-state") {
+      hostIceState = String(message.state || "");
+      return;
+    }
+    if (message.type === "host-conn-state") {
+      hostConnState = String(message.state || "");
       return;
     }
 
@@ -297,6 +307,8 @@ export async function openDriveViaWebRtcInvite(
       iceConnectionState: String(pc.iceConnectionState || ""),
       connectionState: String(pc.connectionState || ""),
       remoteSignalError,
+      hostIceState,
+      hostConnState,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -336,6 +348,12 @@ export async function openDriveViaWebRtcInvite(
       return "No reflexive ICE candidates available for direct cross-network route";
     });
   } catch (error) {
+    const maybeIceSummary = await collectIceStatsSummary(pc).catch(() => null);
+    if (maybeIceSummary && String(error?.message || "").includes("WebRTC channel")) {
+      throw new Error(
+        `${String(error.message || error)} ${JSON.stringify({ iceStats: maybeIceSummary })}`,
+      );
+    }
     await stopRtc();
     throw error;
   } finally {
@@ -615,4 +633,68 @@ function sanitizeIceSdp(sdpText) {
     out.push(value);
   }
   return out.join("\r\n");
+}
+
+async function collectIceStatsSummary(pc) {
+  if (!pc || typeof pc.getStats !== "function") return null;
+  const report = await pc.getStats();
+  const summary = {
+    selectedPair: null,
+    candidatePairs: { total: 0, succeeded: 0, failed: 0, inProgress: 0 },
+    localCandidates: { total: 0, byType: {} },
+    remoteCandidates: { total: 0, byType: {} },
+  };
+  const byId = new Map();
+  for (const stat of report.values()) {
+    byId.set(stat.id, stat);
+  }
+  for (const stat of report.values()) {
+    if (stat.type === "candidate-pair") {
+      summary.candidatePairs.total += 1;
+      const state = String(stat.state || "");
+      if (state === "succeeded") summary.candidatePairs.succeeded += 1;
+      else if (state === "failed") summary.candidatePairs.failed += 1;
+      else summary.candidatePairs.inProgress += 1;
+      if (stat.nominated || stat.selected) {
+        const local = byId.get(stat.localCandidateId);
+        const remote = byId.get(stat.remoteCandidateId);
+        summary.selectedPair = {
+          state,
+          nominated: Boolean(stat.nominated),
+          bytesSent: Number(stat.bytesSent || 0),
+          bytesReceived: Number(stat.bytesReceived || 0),
+          currentRoundTripTime: Number(stat.currentRoundTripTime || 0),
+          local: local
+            ? {
+                candidateType: String(local.candidateType || ""),
+                protocol: String(local.protocol || ""),
+                address: String(local.address || ""),
+                port: Number(local.port || 0),
+              }
+            : null,
+          remote: remote
+            ? {
+                candidateType: String(remote.candidateType || ""),
+                protocol: String(remote.protocol || ""),
+                address: String(remote.address || ""),
+                port: Number(remote.port || 0),
+              }
+            : null,
+        };
+      }
+      continue;
+    }
+    if (stat.type === "local-candidate") {
+      summary.localCandidates.total += 1;
+      const kind = String(stat.candidateType || "other");
+      summary.localCandidates.byType[kind] = Number(summary.localCandidates.byType[kind] || 0) + 1;
+      continue;
+    }
+    if (stat.type === "remote-candidate") {
+      summary.remoteCandidates.total += 1;
+      const kind = String(stat.candidateType || "other");
+      summary.remoteCandidates.byType[kind] = Number(summary.remoteCandidates.byType[kind] || 0) + 1;
+    }
+  }
+  return summary;
 }
