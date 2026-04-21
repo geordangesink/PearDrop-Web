@@ -91,7 +91,9 @@ export async function openDriveViaWebRtcInvite(
   let stopped = false;
   let offerRetryTimer = null;
   let requestIceRestart = () => {};
+  let preparedOfferId = 0;
   let currentOfferId = 0;
+  let lastSentOfferId = 0;
   let latestAnsweredOfferId = 0;
   let latestAckedOfferId = 0;
   let latestOfferAckStage = "";
@@ -333,7 +335,7 @@ export async function openDriveViaWebRtcInvite(
       emitPhase("offer-create");
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
-      currentOfferId += 1;
+      preparedOfferId += 1;
     } finally {
       offerInFlight = false;
     }
@@ -345,6 +347,9 @@ export async function openDriveViaWebRtcInvite(
     if (offerAttempts >= maxOfferAttempts) return;
     const current = String(pc?.localDescription?.sdp || "");
     if (!current) return;
+    if (preparedOfferId > 0 && currentOfferId !== preparedOfferId) {
+      currentOfferId = preparedOfferId;
+    }
     emitPhase("offer-send");
     const sdp = sanitizeIceSdp(current);
     signal.send({
@@ -353,6 +358,7 @@ export async function openDriveViaWebRtcInvite(
       punchAtMs: activePunchAtMs,
       offerId: currentOfferId,
     });
+    lastSentOfferId = currentOfferId;
     offerAttempts += 1;
     lastOfferSentAt = Date.now();
   };
@@ -364,6 +370,9 @@ export async function openDriveViaWebRtcInvite(
     if (offerAttempts >= maxOfferAttempts) return;
     offerInFlight = true;
     try {
+      if (preparedOfferId > 0 && currentOfferId !== preparedOfferId) {
+        currentOfferId = preparedOfferId;
+      }
       emitPhase("offer-send");
       const sdp = sanitizeIceSdp(String(pc?.localDescription?.sdp || ""));
       signal.send({
@@ -372,6 +381,7 @@ export async function openDriveViaWebRtcInvite(
         punchAtMs: activePunchAtMs,
         offerId: currentOfferId,
       });
+      lastSentOfferId = currentOfferId;
       offerAttempts += 1;
       lastOfferSentAt = Date.now();
     } finally {
@@ -475,7 +485,9 @@ export async function openDriveViaWebRtcInvite(
       remoteAddCandidateErrors,
       lastRemoteAddCandidateError,
       activePunchAtMs,
+      preparedOfferId,
       currentOfferId,
+      lastSentOfferId,
       latestAnsweredOfferId,
       latestAckedOfferId,
       latestOfferAckStage,
@@ -545,7 +557,9 @@ export async function openDriveViaWebRtcInvite(
         hostIceStats,
         iceGatheringState: String(pc.iceGatheringState || ""),
         signalingState: String(pc.signalingState || ""),
+        preparedOfferId,
         currentOfferId,
+        lastSentOfferId,
         latestAnsweredOfferId,
         latestAckedOfferId,
         latestOfferAckStage,
@@ -562,7 +576,9 @@ export async function openDriveViaWebRtcInvite(
         remoteCandidatesApplied,
         remoteAddCandidateErrors,
         signalingState: String(pc.signalingState || ""),
+        preparedOfferId,
         currentOfferId,
+        lastSentOfferId,
         latestAnsweredOfferId,
         latestAckedOfferId,
         latestOfferAckStage,
@@ -1055,6 +1071,8 @@ function classifyExactFailurePoint(context) {
   const receivedAnswer = Boolean(context?.receivedAnswer);
   const signalingState = String(context?.signalingState || "").toLowerCase();
   const currentOfferId = Number(context?.currentOfferId || 0);
+  const preparedOfferId = Number(context?.preparedOfferId || 0);
+  const lastSentOfferId = Number(context?.lastSentOfferId || 0);
   const latestAnsweredOfferId = Number(context?.latestAnsweredOfferId || 0);
   const latestAckedOfferId = Number(context?.latestAckedOfferId || 0);
   const latestOfferAckStage = String(context?.latestOfferAckStage || "");
@@ -1090,6 +1108,20 @@ function classifyExactFailurePoint(context) {
   }
 
   if (signalingState === "have-local-offer" && latestAnsweredOfferId < currentOfferId) {
+    if (lastSentOfferId < currentOfferId || currentOfferId < preparedOfferId) {
+      return {
+        stage: "client.offer-send",
+        exact: true,
+        reason: "Latest local offer generation was prepared but not confirmed as sent",
+        evidence: {
+          preparedOfferId,
+          currentOfferId,
+          lastSentOfferId,
+          latestAnsweredOfferId,
+          latestAckedOfferId,
+        },
+      };
+    }
     return {
       stage: "signaling.latest-answer",
       exact: true,
