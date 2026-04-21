@@ -78,6 +78,8 @@ export async function openDriveViaWebRtcInvite(
   let hostConnState = "";
   let iceRestartAttempts = 0;
   const maxIceRestartAttempts = 1;
+  let remoteAddCandidateErrors = 0;
+  let lastRemoteAddCandidateError = "";
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -172,9 +174,14 @@ export async function openDriveViaWebRtcInvite(
         return;
       }
       try {
-        await pc.addIceCandidate(normalized);
+        const candidateForAdd =
+          typeof RTCIceCandidate === "function" ? new RTCIceCandidate(normalized) : normalized;
+        await pc.addIceCandidate(candidateForAdd);
         remoteCandidatesApplied += 1;
-      } catch {}
+      } catch (error) {
+        remoteAddCandidateErrors += 1;
+        lastRemoteAddCandidateError = String(error?.message || error || "addIceCandidate failed");
+      }
       return;
     }
 
@@ -317,6 +324,8 @@ export async function openDriveViaWebRtcInvite(
       remoteSignalError,
       hostIceState,
       hostConnState,
+      remoteAddCandidateErrors,
+      lastRemoteAddCandidateError,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -720,8 +729,18 @@ function normalizeCandidateForSignal(candidateLike) {
     ? Number(source.sdpMLineIndex)
     : 0;
   const usernameFragment =
-    typeof source?.usernameFragment === "string" ? source.usernameFragment : undefined;
+    typeof source?.usernameFragment === "string" && source.usernameFragment
+      ? source.usernameFragment
+      : parseUfragFromCandidateLine(candidate);
   const normalized = { candidate, sdpMid, sdpMLineIndex };
   if (usernameFragment) normalized.usernameFragment = usernameFragment;
   return normalized;
+}
+
+function parseUfragFromCandidateLine(line) {
+  const text = String(line || "");
+  if (!text) return undefined;
+  const match = text.match(/\bufrag\s+([^\s]+)/i);
+  if (!match) return undefined;
+  return String(match[1] || "").trim() || undefined;
 }
