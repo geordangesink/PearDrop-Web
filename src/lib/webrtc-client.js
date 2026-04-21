@@ -31,6 +31,9 @@ export async function openDriveViaWebRtcInvite(
     handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 38000),
     postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 28000),
     postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 10000),
+    preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 900),
+    restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 1200),
+    punchLeadMs: Number(options?.timing?.punchLeadMs || 800),
   };
   if (!parsed.signalKey) throw new Error("Invite is missing signal key");
   if (!parsed.nativeInvite) {
@@ -79,9 +82,13 @@ export async function openDriveViaWebRtcInvite(
   let hostIceState = "";
   let hostConnState = "";
   let iceRestartAttempts = 0;
-  const maxIceRestartAttempts = 1;
+  const maxIceRestartAttempts = 2;
   let remoteAddCandidateErrors = 0;
   let lastRemoteAddCandidateError = "";
+  let activePunchAtMs = 0;
+  let suggestedPunchAtMs = 0;
+  let localCandidateQueue = [];
+  let localCandidateFlushTimer = null;
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -92,6 +99,11 @@ export async function openDriveViaWebRtcInvite(
       clearInterval(offerRetryTimer);
       offerRetryTimer = null;
     }
+    if (localCandidateFlushTimer) {
+      clearTimeout(localCandidateFlushTimer);
+      localCandidateFlushTimer = null;
+    }
+    localCandidateQueue = [];
     pc.onicecandidate = null;
     pc.oniceconnectionstatechange = null;
     pc.onconnectionstatechange = null;
@@ -126,6 +138,7 @@ export async function openDriveViaWebRtcInvite(
     if (stopped) return;
     if (message.type === "ready") {
       peerSignalReady = true;
+      suggestedPunchAtMs = Number(message.punchAtMs || 0);
       return;
     }
     if (message.type === "error") {
@@ -151,6 +164,10 @@ export async function openDriveViaWebRtcInvite(
         remoteDescriptionSet = true;
         receivedAnswer = true;
         answerReceivedAt = Date.now();
+        if (offerRetryTimer) {
+          clearInterval(offerRetryTimer);
+          offerRetryTimer = null;
+        }
         await flushPendingCandidates();
       } catch (error) {
         remoteSignalError = String(error?.message || error || "Failed to apply peer answer");
@@ -210,7 +227,15 @@ export async function openDriveViaWebRtcInvite(
       if (isMdnsIceCandidate(normalized)) return;
       localCandidatesSent += 1;
       lastLocalCandidateAt = Date.now();
+      if (activePunchAtMs > Date.now()) {
+        localCandidateQueue.push({ type: "candidate", candidate: normalized });
+        return;
+      }
       signal.send({ type: "candidate", candidate: normalized });
+      return;
+    }
+    if (activePunchAtMs > Date.now()) {
+      localCandidateQueue.push({ type: "candidate-end", endOfCandidates: true });
       return;
     }
     signal.send({ type: "candidate-end", endOfCandidates: true });
@@ -226,6 +251,27 @@ export async function openDriveViaWebRtcInvite(
       // Queue incoming remote candidates until the matching answer is applied.
       remoteDescriptionSet = false;
       pendingRemoteCandidates.length = 0;
+      activePunchAtMs = nextPunchAtMs({
+        now: Date.now(),
+        suggestedPunchAtMs,
+        punchLeadMs: timing.punchLeadMs,
+      });
+      scheduleLocalCandidateFlush({
+        activePunchAtMs,
+        signal,
+        stoppedRef: () => stopped,
+        getQueue: () => localCandidateQueue,
+        setQueue: (value) => {
+          localCandidateQueue = value;
+        },
+        setTimer: (value) => {
+          localCandidateFlushTimer = value;
+        },
+        clearTimer: () => {
+          if (localCandidateFlushTimer) clearTimeout(localCandidateFlushTimer);
+          localCandidateFlushTimer = null;
+        },
+      });
       emitPhase("offer-create");
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
@@ -245,6 +291,7 @@ export async function openDriveViaWebRtcInvite(
     signal.send({
       type: "offer",
       sdp,
+      punchAtMs: activePunchAtMs,
     });
     offerAttempts += 1;
     lastOfferSentAt = Date.now();
@@ -262,6 +309,7 @@ export async function openDriveViaWebRtcInvite(
       signal.send({
         type: "offer",
         sdp,
+        punchAtMs: activePunchAtMs,
       });
       offerAttempts += 1;
       lastOfferSentAt = Date.now();
@@ -277,7 +325,7 @@ export async function openDriveViaWebRtcInvite(
     if (offerInFlight) return false;
     if (iceRestartAttempts >= maxIceRestartAttempts) return false;
     if (offerAttempts >= maxOfferAttempts) return false;
-    if (Date.now() - lastOfferSentAt < 2500) return false;
+    if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) return false;
     iceRestartAttempts += 1;
     await sendOffer({ restartIce: true });
     return true;
@@ -297,7 +345,7 @@ export async function openDriveViaWebRtcInvite(
     if (offerAttempts >= maxOfferAttempts) return;
     // Before first answer, re-send the same offer instead of repeated ICE restarts.
     sendCurrentOffer();
-  }, 1800);
+  }, timing.preAnswerOfferRetryMs);
 
   const onConnectionStateMaybeRestart = () => {
     const iceState = String(pc.iceConnectionState || "");
@@ -332,6 +380,7 @@ export async function openDriveViaWebRtcInvite(
       remoteIpv6GlobalHostCandidates,
       remoteAddCandidateErrors,
       lastRemoteAddCandidateError,
+      activePunchAtMs,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -768,4 +817,45 @@ function parseUfragFromCandidateLine(line) {
   const match = text.match(/\bufrag\s+([^\s]+)/i);
   if (!match) return undefined;
   return String(match[1] || "").trim() || undefined;
+}
+
+function nextPunchAtMs({ now, suggestedPunchAtMs, punchLeadMs }) {
+  const nowMs = Number(now || Date.now());
+  const suggested = Number(suggestedPunchAtMs || 0);
+  const lead = Math.max(200, Number(punchLeadMs || 0));
+  const earliest = nowMs + lead;
+  const latest = nowMs + 4000;
+  if (!Number.isFinite(suggested) || suggested <= 0) return earliest;
+  return Math.max(earliest, Math.min(latest, suggested));
+}
+
+function scheduleLocalCandidateFlush({
+  activePunchAtMs,
+  signal,
+  stoppedRef,
+  getQueue,
+  setQueue,
+  setTimer,
+  clearTimer,
+}) {
+  clearTimer();
+  const flush = () => {
+    if (typeof stoppedRef === "function" && stoppedRef()) return;
+    const queue = Array.isArray(getQueue?.()) ? getQueue() : [];
+    if (!queue.length) return;
+    setQueue([]);
+    for (const item of queue) {
+      signal.send(item);
+    }
+  };
+  const delayMs = Math.max(0, Number(activePunchAtMs || 0) - Date.now());
+  if (delayMs <= 0) {
+    flush();
+    return;
+  }
+  const timer = setTimeout(() => {
+    setTimer(null);
+    flush();
+  }, delayMs);
+  setTimer(timer);
 }
