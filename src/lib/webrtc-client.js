@@ -63,6 +63,35 @@ export async function openDriveViaWebRtcInvite(
   const maxOfferAttempts = 6;
   let offerInFlight = false;
   let lastOfferSentAt = 0;
+  let stopped = false;
+  let offerRetryTimer = null;
+
+  const stopRtc = async () => {
+    if (stopped) return;
+    stopped = true;
+    if (offerRetryTimer) {
+      clearInterval(offerRetryTimer);
+      offerRetryTimer = null;
+    }
+    pc.onicecandidate = null;
+    pc.oniceconnectionstatechange = null;
+    pc.onconnectionstatechange = null;
+    try {
+      channel.close();
+    } catch {}
+    try {
+      pc.close();
+    } catch {}
+    try {
+      signalSocket.destroy();
+    } catch {}
+    try {
+      await dht.destroy();
+    } catch {}
+    try {
+      relaySocket.close();
+    } catch {}
+  };
 
   const flushPendingCandidates = async () => {
     if (!remoteDescriptionSet || pendingRemoteCandidates.length === 0) return;
@@ -75,6 +104,7 @@ export async function openDriveViaWebRtcInvite(
   };
 
   signal.onMessage(async (message) => {
+    if (stopped) return;
     if (message.type === "ready") {
       peerSignalReady = true;
       return;
@@ -113,6 +143,7 @@ export async function openDriveViaWebRtcInvite(
   });
 
   pc.onicecandidate = (event) => {
+    if (stopped) return;
     if (event.candidate) {
       bumpCandidateKind(localCandidateKinds, event.candidate);
       if (isRelayIceCandidate(event.candidate)) return;
@@ -123,6 +154,7 @@ export async function openDriveViaWebRtcInvite(
   };
 
   const sendOffer = async ({ restartIce = false } = {}) => {
+    if (stopped) return;
     if (!peerSignalReady) return;
     if (offerInFlight) return;
     if (offerAttempts >= maxOfferAttempts) return;
@@ -146,19 +178,21 @@ export async function openDriveViaWebRtcInvite(
 
   await waitForCondition(
     () => peerSignalReady,
-    9000,
+    2500,
     "Timed out waiting for peer signaling readiness",
-  );
+  ).catch(() => {});
   await sendOffer();
-  const offerRetryTimer = setInterval(() => {
+  offerRetryTimer = setInterval(() => {
+    if (stopped) return;
     if (channel.readyState === "open") return;
     if (!peerSignalReady) return;
     if (receivedAnswer) return;
     if (offerAttempts >= maxOfferAttempts) return;
     void sendOffer({ restartIce: true });
-  }, 3500);
+  }, 2200);
 
   const maybeRestartIce = () => {
+    if (stopped) return;
     if (channel.readyState === "open") return;
     if (!receivedAnswer) return;
     if (Date.now() - lastOfferSentAt < 4000) return;
@@ -196,8 +230,14 @@ export async function openDriveViaWebRtcInvite(
       if (localDirect > 0 || remoteDirect > 0) return "";
       return "No reflexive ICE candidates available for direct cross-network route";
     });
+  } catch (error) {
+    await stopRtc();
+    throw error;
   } finally {
-    clearInterval(offerRetryTimer);
+    if (offerRetryTimer) {
+      clearInterval(offerRetryTimer);
+      offerRetryTimer = null;
+    }
   }
   emitPhase("channel-open");
 
@@ -234,21 +274,7 @@ export async function openDriveViaWebRtcInvite(
       },
     },
     async close() {
-      try {
-        channel.close();
-      } catch {}
-      try {
-        pc.close();
-      } catch {}
-      try {
-        signalSocket.destroy();
-      } catch {}
-      try {
-        await dht.destroy();
-      } catch {}
-      try {
-        relaySocket.close();
-      } catch {}
+      await stopRtc();
     },
   };
 }
@@ -356,7 +382,7 @@ function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null, getEa
   return new Promise((resolve, reject) => {
     const onPcState = () => {
       const state = String(pc?.connectionState || "");
-      if (state === "failed" || state === "closed") {
+      if (state === "closed") {
         cleanup();
         reject(new Error("Peer connection failed before channel opened"));
       }
