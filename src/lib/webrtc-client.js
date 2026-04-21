@@ -50,8 +50,12 @@ export async function openDriveViaWebRtcInvite(
   const peer = createDataChannelRpc(channel);
   let remoteDescriptionSet = false;
   const pendingRemoteCandidates = [];
+  let receivedAnswer = false;
+  let localCandidatesSent = 0;
+  let remoteCandidatesApplied = 0;
+  let remoteCandidatesDropped = 0;
   let offerAttempts = 0;
-  const maxOfferAttempts = 8;
+  const maxOfferAttempts = 6;
   let offerInFlight = false;
 
   const flushPendingCandidates = async () => {
@@ -68,19 +72,27 @@ export async function openDriveViaWebRtcInvite(
     if (message.type === "answer" && message.sdp) {
       await pc.setRemoteDescription({ type: "answer", sdp: message.sdp });
       remoteDescriptionSet = true;
+      receivedAnswer = true;
       await flushPendingCandidates();
       return;
     }
 
     if (message.type === "candidate" && message.candidate) {
-      if (isRelayIceCandidate(message.candidate)) return;
-      if (isMdnsIceCandidate(message.candidate)) return;
+      if (isRelayIceCandidate(message.candidate)) {
+        remoteCandidatesDropped += 1;
+        return;
+      }
+      if (isMdnsIceCandidate(message.candidate)) {
+        remoteCandidatesDropped += 1;
+        return;
+      }
       if (!remoteDescriptionSet) {
         pendingRemoteCandidates.push(message.candidate);
         return;
       }
       try {
         await pc.addIceCandidate(message.candidate);
+        remoteCandidatesApplied += 1;
       } catch {}
     }
   });
@@ -89,6 +101,7 @@ export async function openDriveViaWebRtcInvite(
     if (event.candidate) {
       if (isRelayIceCandidate(event.candidate)) return;
       if (isMdnsIceCandidate(event.candidate)) return;
+      localCandidatesSent += 1;
       signal.send({ type: "candidate", candidate: event.candidate });
     }
   };
@@ -117,7 +130,7 @@ export async function openDriveViaWebRtcInvite(
     if (channel.readyState === "open") return;
     if (offerAttempts >= maxOfferAttempts) return;
     void sendOffer({ restartIce: true });
-  }, 6000);
+  }, 3500);
 
   const maybeRestartIce = () => {
     if (channel.readyState === "open") return;
@@ -133,8 +146,22 @@ export async function openDriveViaWebRtcInvite(
   };
 
   emitPhase("peer-handshake");
-  await waitForChannelOpen(channel, pc, 55000);
-  clearInterval(offerRetryTimer);
+  try {
+    await waitForChannelOpen(channel, pc, 28000, () => ({
+      offerAttempts,
+      receivedAnswer,
+      localCandidatesSent,
+      remoteCandidatesApplied,
+      remoteCandidatesDropped,
+      pendingRemoteCandidates: pendingRemoteCandidates.length,
+      signalingState: String(pc.signalingState || ""),
+      iceGatheringState: String(pc.iceGatheringState || ""),
+      iceConnectionState: String(pc.iceConnectionState || ""),
+      connectionState: String(pc.connectionState || ""),
+    }));
+  } finally {
+    clearInterval(offerRetryTimer);
+  }
   emitPhase("channel-open");
 
   emitPhase("drive-ready");
@@ -287,7 +314,7 @@ function onceStreamOpen(stream) {
   });
 }
 
-function waitForChannelOpen(channel, pc, timeoutMs) {
+function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null) {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
     const onPcState = () => {
@@ -308,7 +335,14 @@ function waitForChannelOpen(channel, pc, timeoutMs) {
     const timer = setTimeout(
       () => {
         cleanup();
-        reject(new Error("Timed out waiting for direct WebRTC channel"));
+        const diagnostics =
+          typeof getDiagnostics === "function" ? getDiagnostics() : null;
+        const details = diagnostics
+          ? ` ${JSON.stringify(diagnostics)}`
+          : "";
+        reject(
+          new Error(`Timed out waiting for direct WebRTC channel.${details}`),
+        );
       },
       timeoutMs,
     );
