@@ -4,6 +4,9 @@ const DEFAULT_ICE_SERVERS = [
       "stun:stun.l.google.com:19302",
       "stun:stun1.l.google.com:19302",
       "stun:stun2.l.google.com:19302",
+      "stun:stun3.l.google.com:19302",
+      "stun:stun4.l.google.com:19302",
+      "stun:stun.cloudflare.com:3478",
     ],
   },
 ];
@@ -39,16 +42,38 @@ export async function openDriveViaWebRtcInvite(
   const pc = new RTCPeerConnection({ iceServers: DEFAULT_ICE_SERVERS });
   const channel = pc.createDataChannel("peardrops");
   const peer = createDataChannelRpc(channel);
+  let remoteDescriptionSet = false;
+  const pendingRemoteCandidates = [];
+  let offerAttempts = 0;
+  let offerInFlight = false;
+
+  const flushPendingCandidates = async () => {
+    if (!remoteDescriptionSet || pendingRemoteCandidates.length === 0) return;
+    while (pendingRemoteCandidates.length) {
+      const candidate = pendingRemoteCandidates.shift();
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch {}
+    }
+  };
 
   signal.onMessage(async (message) => {
     if (message.type === "answer" && message.sdp) {
       await pc.setRemoteDescription({ type: "answer", sdp: message.sdp });
+      remoteDescriptionSet = true;
+      await flushPendingCandidates();
       return;
     }
 
     if (message.type === "candidate" && message.candidate) {
       if (isRelayIceCandidate(message.candidate)) return;
-      await pc.addIceCandidate(message.candidate);
+      if (!remoteDescriptionSet) {
+        pendingRemoteCandidates.push(message.candidate);
+        return;
+      }
+      try {
+        await pc.addIceCandidate(message.candidate);
+      } catch {}
     }
   });
 
@@ -59,17 +84,34 @@ export async function openDriveViaWebRtcInvite(
     }
   };
 
-  emitPhase("offer-create");
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  emitPhase("offer-send");
-  signal.send({
-    type: "offer",
-    sdp: offer.sdp,
-  });
+  const sendOffer = async ({ restartIce = false } = {}) => {
+    if (offerInFlight) return;
+    offerInFlight = true;
+    try {
+      emitPhase("offer-create");
+      const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
+      await pc.setLocalDescription(offer);
+      emitPhase("offer-send");
+      signal.send({
+        type: "offer",
+        sdp: offer.sdp,
+      });
+      offerAttempts += 1;
+    } finally {
+      offerInFlight = false;
+    }
+  };
+
+  await sendOffer();
+  const offerRetryTimer = setInterval(() => {
+    if (channel.readyState === "open") return;
+    if (offerAttempts >= 4) return;
+    void sendOffer({ restartIce: true });
+  }, 8000);
 
   emitPhase("peer-handshake");
-  await waitForChannelOpen(channel, 25000);
+  await waitForChannelOpen(channel, 45000);
+  clearInterval(offerRetryTimer);
   emitPhase("channel-open");
 
   emitPhase("drive-ready");
