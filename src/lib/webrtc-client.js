@@ -67,7 +67,7 @@ export async function openDriveViaWebRtcInvite(
   let localIpv6GlobalHostCandidates = 0;
   let remoteIpv6GlobalHostCandidates = 0;
   let offerAttempts = 0;
-  const maxOfferAttempts = 4;
+  const maxOfferAttempts = 5;
   let offerInFlight = false;
   let lastOfferSentAt = 0;
   let remoteSignalError = "";
@@ -78,7 +78,7 @@ export async function openDriveViaWebRtcInvite(
   let hostConnState = "";
   let hostNetStatus = null;
   let iceRestartAttempts = 0;
-  const maxIceRestartAttempts = 1;
+  const maxIceRestartAttempts = 2;
   let remoteAddCandidateErrors = 0;
   let lastRemoteAddCandidateError = "";
   let activePunchAtMs = 0;
