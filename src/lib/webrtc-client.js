@@ -90,6 +90,8 @@ export async function openDriveViaWebRtcInvite(
   let stopped = false;
   let offerRetryTimer = null;
   let requestIceRestart = () => {};
+  let currentOfferId = 0;
+  let latestAnsweredOfferId = 0;
 
   const stopRtc = async () => {
     if (stopped) return;
@@ -189,6 +191,8 @@ export async function openDriveViaWebRtcInvite(
 
     if (message.type === "answer" && message.sdp) {
       if (String(pc.signalingState || "") !== "have-local-offer") return;
+      const answerOfferId = Number(message.offerId || 0);
+      if (answerOfferId > 0 && currentOfferId > 0 && answerOfferId !== currentOfferId) return;
       try {
         await pc.setRemoteDescription({
           type: "answer",
@@ -196,6 +200,7 @@ export async function openDriveViaWebRtcInvite(
         });
         remoteDescriptionSet = true;
         receivedAnswer = true;
+        latestAnsweredOfferId = answerOfferId || currentOfferId;
         answerReceivedAt = Date.now();
         if (offerRetryTimer) {
           clearInterval(offerRetryTimer);
@@ -306,6 +311,7 @@ export async function openDriveViaWebRtcInvite(
       emitPhase("offer-create");
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
+      currentOfferId += 1;
     } finally {
       offerInFlight = false;
     }
@@ -323,6 +329,7 @@ export async function openDriveViaWebRtcInvite(
       type: "offer",
       sdp,
       punchAtMs: activePunchAtMs,
+      offerId: currentOfferId,
     });
     offerAttempts += 1;
     lastOfferSentAt = Date.now();
@@ -341,6 +348,7 @@ export async function openDriveViaWebRtcInvite(
         type: "offer",
         sdp,
         punchAtMs: activePunchAtMs,
+        offerId: currentOfferId,
       });
       offerAttempts += 1;
       lastOfferSentAt = Date.now();
@@ -444,6 +452,8 @@ export async function openDriveViaWebRtcInvite(
       remoteAddCandidateErrors,
       lastRemoteAddCandidateError,
       activePunchAtMs,
+      currentOfferId,
+      latestAnsweredOfferId,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -506,6 +516,8 @@ export async function openDriveViaWebRtcInvite(
         hostNetStatus,
         iceGatheringState: String(pc.iceGatheringState || ""),
         signalingState: String(pc.signalingState || ""),
+        currentOfferId,
+        latestAnsweredOfferId,
         answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
         postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
         remoteSignalError,
