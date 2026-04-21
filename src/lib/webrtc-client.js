@@ -62,6 +62,7 @@ export async function openDriveViaWebRtcInvite(
   let offerAttempts = 0;
   const maxOfferAttempts = 6;
   let offerInFlight = false;
+  let lastOfferSentAt = 0;
 
   const flushPendingCandidates = async () => {
     if (!remoteDescriptionSet || pendingRemoteCandidates.length === 0) return;
@@ -137,6 +138,7 @@ export async function openDriveViaWebRtcInvite(
         sdp,
       });
       offerAttempts += 1;
+      lastOfferSentAt = Date.now();
     } finally {
       offerInFlight = false;
     }
@@ -151,12 +153,15 @@ export async function openDriveViaWebRtcInvite(
   const offerRetryTimer = setInterval(() => {
     if (channel.readyState === "open") return;
     if (!peerSignalReady) return;
+    if (receivedAnswer) return;
     if (offerAttempts >= maxOfferAttempts) return;
     void sendOffer({ restartIce: true });
   }, 3500);
 
   const maybeRestartIce = () => {
     if (channel.readyState === "open") return;
+    if (!receivedAnswer) return;
+    if (Date.now() - lastOfferSentAt < 4000) return;
     void sendOffer({ restartIce: true });
   };
   pc.oniceconnectionstatechange = () => {
