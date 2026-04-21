@@ -82,6 +82,7 @@ export async function openDriveViaWebRtcInvite(
   const maxIceRestartAttempts = 2;
   let remoteAddCandidateErrors = 0;
   let lastRemoteAddCandidateError = "";
+  let remoteCandidatesIgnoredByOfferId = 0;
   let activePunchAtMs = 0;
   let suggestedPunchAtMs = 0;
   let localCandidateQueue = [];
@@ -240,6 +241,12 @@ export async function openDriveViaWebRtcInvite(
     if (message.type === "candidate" && message.candidate) {
       const normalized = normalizeCandidateForSignal(message.candidate);
       if (!normalized) return;
+      const messageOfferId = Number(message.offerId || 0);
+      if (messageOfferId > 0 && currentOfferId > 0 && messageOfferId !== currentOfferId) {
+        remoteCandidatesIgnoredByOfferId += 1;
+        remoteCandidatesDropped += 1;
+        return;
+      }
       bumpCandidateKind(remoteCandidateKinds, normalized);
       if (isGlobalIpv6HostCandidate(normalized)) remoteIpv6GlobalHostCandidates += 1;
       if (isRelayIceCandidate(normalized)) {
@@ -288,17 +295,33 @@ export async function openDriveViaWebRtcInvite(
       localCandidatesSent += 1;
       lastLocalCandidateAt = Date.now();
       if (activePunchAtMs > Date.now()) {
-        localCandidateQueue.push({ type: "candidate", candidate: normalized });
+        localCandidateQueue.push({
+          type: "candidate",
+          candidate: normalized,
+          offerId: currentOfferId || undefined,
+        });
         return;
       }
-      signal.send({ type: "candidate", candidate: normalized });
+      signal.send({
+        type: "candidate",
+        candidate: normalized,
+        offerId: currentOfferId || undefined,
+      });
       return;
     }
     if (activePunchAtMs > Date.now()) {
-      localCandidateQueue.push({ type: "candidate-end", endOfCandidates: true });
+      localCandidateQueue.push({
+        type: "candidate-end",
+        endOfCandidates: true,
+        offerId: currentOfferId || undefined,
+      });
       return;
     }
-    signal.send({ type: "candidate-end", endOfCandidates: true });
+    signal.send({
+      type: "candidate-end",
+      endOfCandidates: true,
+      offerId: currentOfferId || undefined,
+    });
   };
 
   const createLocalOffer = async ({ restartIce = false } = {}) => {
@@ -484,6 +507,7 @@ export async function openDriveViaWebRtcInvite(
       remoteIpv6GlobalHostCandidates,
       remoteAddCandidateErrors,
       lastRemoteAddCandidateError,
+      remoteCandidatesIgnoredByOfferId,
       activePunchAtMs,
       preparedOfferId,
       currentOfferId,
@@ -575,6 +599,7 @@ export async function openDriveViaWebRtcInvite(
         localCandidatesSent,
         remoteCandidatesApplied,
         remoteAddCandidateErrors,
+        remoteCandidatesIgnoredByOfferId,
         signalingState: String(pc.signalingState || ""),
         preparedOfferId,
         currentOfferId,
@@ -1082,6 +1107,7 @@ function classifyExactFailurePoint(context) {
   const hostIceStats = context?.hostIceStats || null;
   const hostFlow = context?.hostNetStatus?.remoteCandidateFlow || null;
   const browserRemoteCandidates = Number(browserStats?.remoteCandidates?.total || 0);
+  const remoteCandidatesIgnoredByOfferId = Number(context?.remoteCandidatesIgnoredByOfferId || 0);
   const browserPairsTotal = Number(browserStats?.candidatePairs?.total || 0);
   const browserPairsInProgress = Number(browserStats?.candidatePairs?.inProgress || 0);
   const browserHasSelectedPair = Boolean(browserStats?.selectedPair);
@@ -1268,3 +1294,15 @@ function scheduleLocalCandidateFlush({
   }, delayMs);
   setTimer(timer);
 }
+  if (remoteCandidatesIgnoredByOfferId > 0 && browserRemoteCandidates === 0) {
+    return {
+      stage: "candidate.generation-mismatch",
+      exact: true,
+      reason: "Browser dropped remote ICE candidates from non-active offer generation",
+      evidence: {
+        remoteCandidatesIgnoredByOfferId,
+        currentOfferId,
+        latestAnsweredOfferId,
+      },
+    };
+  }
