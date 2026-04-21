@@ -1,3 +1,13 @@
+const DEFAULT_ICE_SERVERS = [
+  {
+    urls: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302",
+      "stun:stun2.l.google.com:19302",
+    ],
+  },
+];
+
 export async function openDriveViaWebRtcInvite(
   parsed,
   relayUrl,
@@ -26,7 +36,7 @@ export async function openDriveViaWebRtcInvite(
   const signal = createLineSignal(signalSocket, b4a);
 
   emitPhase("rtc-setup");
-  const pc = new RTCPeerConnection({ iceServers: [] });
+  const pc = new RTCPeerConnection({ iceServers: DEFAULT_ICE_SERVERS });
   const channel = pc.createDataChannel("peardrops");
   const peer = createDataChannelRpc(channel);
 
@@ -37,12 +47,14 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "candidate" && message.candidate) {
+      if (isRelayIceCandidate(message.candidate)) return;
       await pc.addIceCandidate(message.candidate);
     }
   });
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
+      if (isRelayIceCandidate(event.candidate)) return;
       signal.send({ type: "candidate", candidate: event.candidate });
     }
   };
@@ -57,7 +69,7 @@ export async function openDriveViaWebRtcInvite(
   });
 
   emitPhase("peer-handshake");
-  await waitForChannelOpen(channel, 10000);
+  await waitForChannelOpen(channel, 25000);
   emitPhase("channel-open");
 
   emitPhase("drive-ready");
@@ -226,4 +238,12 @@ function waitForChannelOpen(channel, timeoutMs) {
       reject(new Error("WebRTC datachannel failed"));
     };
   });
+}
+
+function isRelayIceCandidate(candidateLike) {
+  const candidateLine =
+    typeof candidateLike === "string"
+      ? candidateLike
+      : String(candidateLike?.candidate || "");
+  return /\btyp\s+relay\b/i.test(candidateLine);
 }
