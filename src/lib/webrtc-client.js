@@ -74,6 +74,7 @@ export async function openDriveViaWebRtcInvite(
 
     if (message.type === "candidate" && message.candidate) {
       if (isRelayIceCandidate(message.candidate)) return;
+      if (isMdnsIceCandidate(message.candidate)) return;
       if (!remoteDescriptionSet) {
         pendingRemoteCandidates.push(message.candidate);
         return;
@@ -87,6 +88,7 @@ export async function openDriveViaWebRtcInvite(
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       if (isRelayIceCandidate(event.candidate)) return;
+      if (isMdnsIceCandidate(event.candidate)) return;
       signal.send({ type: "candidate", candidate: event.candidate });
     }
   };
@@ -330,4 +332,12 @@ function isRelayIceCandidate(candidateLike) {
       ? candidateLike
       : String(candidateLike?.candidate || "");
   return /\btyp\s+relay\b/i.test(candidateLine);
+}
+
+function isMdnsIceCandidate(candidateLike) {
+  const candidateLine =
+    typeof candidateLike === "string"
+      ? candidateLike
+      : String(candidateLike?.candidate || "");
+  return /\b[a-z0-9-]+\.local\b/i.test(candidateLine);
 }
