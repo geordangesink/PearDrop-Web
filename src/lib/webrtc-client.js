@@ -67,13 +67,15 @@ export async function openDriveViaWebRtcInvite(
   const localCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
   const remoteCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
   let offerAttempts = 0;
-  const maxOfferAttempts = 3;
+  const maxOfferAttempts = 4;
   let offerInFlight = false;
   let lastOfferSentAt = 0;
   let remoteSignalError = "";
   let answerReceivedAt = 0;
   let lastLocalCandidateAt = 0;
   let lastRemoteCandidateAt = 0;
+  let iceRestartAttempts = 0;
+  const maxIceRestartAttempts = 1;
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -126,7 +128,6 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "answer" && message.sdp) {
-      if (remoteDescriptionSet) return;
       if (String(pc.signalingState || "") !== "have-local-offer") return;
       try {
         await pc.setRemoteDescription({
@@ -240,6 +241,19 @@ export async function openDriveViaWebRtcInvite(
     }
   };
 
+  const tryIceRestart = async () => {
+    if (stopped) return false;
+    if (!receivedAnswer) return false;
+    if (channel.readyState === "open") return false;
+    if (offerInFlight) return false;
+    if (iceRestartAttempts >= maxIceRestartAttempts) return false;
+    if (offerAttempts >= maxOfferAttempts) return false;
+    if (Date.now() - lastOfferSentAt < 2500) return false;
+    iceRestartAttempts += 1;
+    await sendOffer({ restartIce: true });
+    return true;
+  };
+
   await waitForCondition(
     () => peerSignalReady,
     timing.signalReadyTimeoutMs,
@@ -256,8 +270,15 @@ export async function openDriveViaWebRtcInvite(
     sendCurrentOffer();
   }, 1800);
 
-  pc.oniceconnectionstatechange = () => {};
-  pc.onconnectionstatechange = () => {};
+  const onConnectionStateMaybeRestart = () => {
+    const iceState = String(pc.iceConnectionState || "");
+    const connState = String(pc.connectionState || "");
+    if (iceState === "failed" || connState === "failed" || iceState === "disconnected") {
+      void tryIceRestart();
+    }
+  };
+  pc.oniceconnectionstatechange = onConnectionStateMaybeRestart;
+  pc.onconnectionstatechange = onConnectionStateMaybeRestart;
 
   emitPhase("peer-handshake");
   const handshakeStartedAt = Date.now();
@@ -282,6 +303,7 @@ export async function openDriveViaWebRtcInvite(
       lastRemoteCandidateAt,
       localCandidateIdleMs: lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : 0,
       remoteCandidateIdleMs: lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : 0,
+      iceRestartAttempts,
     }), () => {
       if (!receivedAnswer && Date.now() - handshakeStartedAt > timing.noAnswerTimeoutMs) {
         return "Timed out waiting for peer answer";
@@ -296,6 +318,15 @@ export async function openDriveViaWebRtcInvite(
         const localIdleMs = lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : Infinity;
         const remoteIdleMs = lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : Infinity;
         const maxIdleMs = Math.max(localIdleMs, remoteIdleMs);
+        const iceState = String(pc.iceConnectionState || "");
+        const connState = String(pc.connectionState || "");
+        if (
+          (iceState === "failed" || connState === "failed" || maxIdleMs > timing.postAnswerIdleTimeoutMs) &&
+          iceRestartAttempts < maxIceRestartAttempts
+        ) {
+          void tryIceRestart();
+          return "";
+        }
         if (gatheringState === "complete" || maxIdleMs > timing.postAnswerIdleTimeoutMs) {
           return "Timed out waiting for ICE connect after peer answer";
         }
