@@ -1,11 +1,6 @@
 const DEFAULT_ICE_SERVERS = [
   {
     urls: [
-      "stun:stun.l.google.com:19302",
-      "stun:stun1.l.google.com:19302",
-      "stun:stun2.l.google.com:19302",
-      "stun:stun3.l.google.com:19302",
-      "stun:stun4.l.google.com:19302",
       "stun:stun.cloudflare.com:3478",
       "stun:global.stun.twilio.com:3478",
       "stun:stun.sipgate.net:3478",
@@ -131,13 +126,30 @@ export async function openDriveViaWebRtcInvite(
     } catch {}
   };
 
+  const addRemoteCandidate = async (candidate) => {
+    if (!candidate) {
+      await pc.addIceCandidate(null);
+      return true;
+    }
+    const candidateForAdd =
+      typeof RTCIceCandidate === "function" ? new RTCIceCandidate(candidate) : candidate;
+    await pc.addIceCandidate(candidateForAdd);
+    return true;
+  };
+
   const flushPendingCandidates = async () => {
     if (!remoteDescriptionSet || pendingRemoteCandidates.length === 0) return;
     while (pendingRemoteCandidates.length) {
       const candidate = pendingRemoteCandidates.shift();
       try {
-        await pc.addIceCandidate(candidate);
-      } catch {}
+        await addRemoteCandidate(candidate);
+        if (candidate) remoteCandidatesApplied += 1;
+      } catch (error) {
+        if (candidate) {
+          remoteAddCandidateErrors += 1;
+          lastRemoteAddCandidateError = String(error?.message || error || "addIceCandidate failed");
+        }
+      }
     }
   };
 
@@ -206,9 +218,7 @@ export async function openDriveViaWebRtcInvite(
         return;
       }
       try {
-        const candidateForAdd =
-          typeof RTCIceCandidate === "function" ? new RTCIceCandidate(normalized) : normalized;
-        await pc.addIceCandidate(candidateForAdd);
+        await addRemoteCandidate(normalized);
         remoteCandidatesApplied += 1;
       } catch (error) {
         remoteAddCandidateErrors += 1;
@@ -223,7 +233,7 @@ export async function openDriveViaWebRtcInvite(
         return;
       }
       try {
-        await pc.addIceCandidate(null);
+        await addRemoteCandidate(null);
       } catch {}
     }
   });
