@@ -425,6 +425,11 @@ export async function openDriveViaWebRtcInvite(
         return "Timed out waiting for peer answer";
       }
       if (remoteSignalError) return remoteSignalError;
+      const hostIce = String(hostIceState || "").toLowerCase();
+      const hostConn = String(hostConnState || "").toLowerCase();
+      if (receivedAnswer && (hostIce === "failed" || hostConn === "failed")) {
+        return "Host ICE failed before data channel opened";
+      }
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
       const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
       const hasGlobalIpv6HostPath =
