@@ -29,7 +29,7 @@ export async function openDriveViaWebRtcInvite(
     signalReadyTimeoutMs: Number(options?.timing?.signalReadyTimeoutMs || 2500),
     noAnswerTimeoutMs: Number(options?.timing?.noAnswerTimeoutMs || 12000),
     handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 38000),
-    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 28000),
+    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 36000),
     postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 10000),
     preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 900),
     restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 1200),
