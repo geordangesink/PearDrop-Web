@@ -7,9 +7,15 @@ const DEFAULT_ICE_SERVERS = [
       "stun:stun3.l.google.com:19302",
       "stun:stun4.l.google.com:19302",
       "stun:stun.cloudflare.com:3478",
+      "stun:stun.cloudflare.com:3478?transport=tcp",
       "stun:global.stun.twilio.com:3478",
+      "stun:global.stun.twilio.com:3478?transport=tcp",
       "stun:stun.sipgate.net:3478",
       "stun:stun.nextcloud.com:443",
+      "stun:stun.nextcloud.com:443?transport=tcp",
+      "stun:openrelay.metered.ca:80",
+      "stun:openrelay.metered.ca:443",
+      "stun:openrelay.metered.ca:443?transport=tcp",
     ],
   },
 ];
@@ -55,6 +61,8 @@ export async function openDriveViaWebRtcInvite(
   let localCandidatesSent = 0;
   let remoteCandidatesApplied = 0;
   let remoteCandidatesDropped = 0;
+  const localCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
+  const remoteCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
   let offerAttempts = 0;
   const maxOfferAttempts = 6;
   let offerInFlight = false;
@@ -87,6 +95,7 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "candidate" && message.candidate) {
+      bumpCandidateKind(remoteCandidateKinds, message.candidate);
       if (isRelayIceCandidate(message.candidate)) {
         remoteCandidatesDropped += 1;
         return;
@@ -108,6 +117,7 @@ export async function openDriveViaWebRtcInvite(
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
+      bumpCandidateKind(localCandidateKinds, event.candidate);
       if (isRelayIceCandidate(event.candidate)) return;
       if (isMdnsIceCandidate(event.candidate)) return;
       localCandidatesSent += 1;
@@ -170,12 +180,21 @@ export async function openDriveViaWebRtcInvite(
       localCandidatesSent,
       remoteCandidatesApplied,
       remoteCandidatesDropped,
+      localCandidateKinds,
+      remoteCandidateKinds,
       pendingRemoteCandidates: pendingRemoteCandidates.length,
       signalingState: String(pc.signalingState || ""),
       iceGatheringState: String(pc.iceGatheringState || ""),
       iceConnectionState: String(pc.iceConnectionState || ""),
       connectionState: String(pc.connectionState || ""),
-    }));
+    }), () => {
+      const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
+      const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
+      if (!receivedAnswer) return "";
+      if (String(pc.iceGatheringState || "") !== "complete") return "";
+      if (localDirect > 0 || remoteDirect > 0) return "";
+      return "No reflexive ICE candidates available for direct cross-network route";
+    });
   } finally {
     clearInterval(offerRetryTimer);
   }
@@ -331,7 +350,7 @@ function onceStreamOpen(stream) {
   });
 }
 
-function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null) {
+function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null, getEarlyAbortReason = null) {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
     const onPcState = () => {
@@ -343,12 +362,26 @@ function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null) {
     };
     const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(abortTimer);
       channel.onopen = null;
       channel.onerror = null;
       if (pc && typeof pc.removeEventListener === "function") {
         pc.removeEventListener("connectionstatechange", onPcState);
       }
     };
+    const abortTimer = setInterval(() => {
+      const reason =
+        typeof getEarlyAbortReason === "function" ? String(getEarlyAbortReason() || "") : "";
+      if (!reason) return;
+      cleanup();
+      const diagnostics =
+        typeof getDiagnostics === "function" ? getDiagnostics() : null;
+      const details = diagnostics
+        ? ` ${JSON.stringify(diagnostics)}`
+        : "";
+      reject(new Error(`${reason}.${details}`));
+    }, 700);
+
     const timer = setTimeout(
       () => {
         cleanup();
@@ -375,6 +408,23 @@ function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null) {
       pc.addEventListener("connectionstatechange", onPcState);
     }
   });
+}
+
+function bumpCandidateKind(counter, candidateLike) {
+  if (!counter) return;
+  const kind = parseCandidateKind(candidateLike);
+  if (!Object.hasOwn(counter, kind)) counter[kind] = 0;
+  counter[kind] += 1;
+}
+
+function parseCandidateKind(candidateLike) {
+  const line =
+    typeof candidateLike === "string"
+      ? candidateLike
+      : String(candidateLike?.candidate || "");
+  if (!line) return "other";
+  const match = line.match(/\btyp\s+(host|srflx|prflx|relay)\b/i);
+  return match ? String(match[1] || "").toLowerCase() : "other";
 }
 
 function waitForCondition(test, timeoutMs, errorMessage) {
