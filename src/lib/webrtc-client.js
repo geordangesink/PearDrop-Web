@@ -7,6 +7,9 @@ const DEFAULT_ICE_SERVERS = [
       "stun:stun3.l.google.com:19302",
       "stun:stun4.l.google.com:19302",
       "stun:stun.cloudflare.com:3478",
+      "stun:global.stun.twilio.com:3478",
+      "stun:stun.sipgate.net:3478",
+      "stun:stun.nextcloud.com:443",
     ],
   },
 ];
@@ -39,12 +42,16 @@ export async function openDriveViaWebRtcInvite(
   const signal = createLineSignal(signalSocket, b4a);
 
   emitPhase("rtc-setup");
-  const pc = new RTCPeerConnection({ iceServers: DEFAULT_ICE_SERVERS });
+  const pc = new RTCPeerConnection({
+    iceServers: DEFAULT_ICE_SERVERS,
+    iceCandidatePoolSize: 8,
+  });
   const channel = pc.createDataChannel("peardrops");
   const peer = createDataChannelRpc(channel);
   let remoteDescriptionSet = false;
   const pendingRemoteCandidates = [];
   let offerAttempts = 0;
+  const maxOfferAttempts = 8;
   let offerInFlight = false;
 
   const flushPendingCandidates = async () => {
@@ -86,6 +93,7 @@ export async function openDriveViaWebRtcInvite(
 
   const sendOffer = async ({ restartIce = false } = {}) => {
     if (offerInFlight) return;
+    if (offerAttempts >= maxOfferAttempts) return;
     offerInFlight = true;
     try {
       emitPhase("offer-create");
@@ -105,12 +113,25 @@ export async function openDriveViaWebRtcInvite(
   await sendOffer();
   const offerRetryTimer = setInterval(() => {
     if (channel.readyState === "open") return;
-    if (offerAttempts >= 4) return;
+    if (offerAttempts >= maxOfferAttempts) return;
     void sendOffer({ restartIce: true });
-  }, 8000);
+  }, 6000);
+
+  const maybeRestartIce = () => {
+    if (channel.readyState === "open") return;
+    void sendOffer({ restartIce: true });
+  };
+  pc.oniceconnectionstatechange = () => {
+    const state = String(pc.iceConnectionState || "");
+    if (state === "failed" || state === "disconnected") maybeRestartIce();
+  };
+  pc.onconnectionstatechange = () => {
+    const state = String(pc.connectionState || "");
+    if (state === "failed" || state === "disconnected") maybeRestartIce();
+  };
 
   emitPhase("peer-handshake");
-  await waitForChannelOpen(channel, 45000);
+  await waitForChannelOpen(channel, pc, 55000);
   clearInterval(offerRetryTimer);
   emitPhase("channel-open");
 
@@ -264,21 +285,42 @@ function onceStreamOpen(stream) {
   });
 }
 
-function waitForChannelOpen(channel, timeoutMs) {
+function waitForChannelOpen(channel, pc, timeoutMs) {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
+    const onPcState = () => {
+      const state = String(pc?.connectionState || "");
+      if (state === "failed" || state === "closed") {
+        cleanup();
+        reject(new Error("Peer connection failed before channel opened"));
+      }
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      channel.onopen = null;
+      channel.onerror = null;
+      if (pc && typeof pc.removeEventListener === "function") {
+        pc.removeEventListener("connectionstatechange", onPcState);
+      }
+    };
     const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for direct WebRTC channel")),
+      () => {
+        cleanup();
+        reject(new Error("Timed out waiting for direct WebRTC channel"));
+      },
       timeoutMs,
     );
     channel.onopen = () => {
-      clearTimeout(timer);
+      cleanup();
       resolve();
     };
     channel.onerror = () => {
-      clearTimeout(timer);
+      cleanup();
       reject(new Error("WebRTC datachannel failed"));
     };
+    if (pc && typeof pc.addEventListener === "function") {
+      pc.addEventListener("connectionstatechange", onPcState);
+    }
   });
 }
 
