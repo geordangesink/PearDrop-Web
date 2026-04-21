@@ -81,6 +81,7 @@ export async function openDriveViaWebRtcInvite(
   let lastRemoteCandidateAt = 0;
   let hostIceState = "";
   let hostConnState = "";
+  let hostNetStatus = null;
   let iceRestartAttempts = 0;
   const maxIceRestartAttempts = 1;
   let remoteAddCandidateErrors = 0;
@@ -145,6 +146,7 @@ export async function openDriveViaWebRtcInvite(
     if (message.type === "ready") {
       peerSignalReady = true;
       suggestedPunchAtMs = Number(message.punchAtMs || 0);
+      hostNetStatus = message.hostNetStatus || hostNetStatus;
       return;
     }
     if (message.type === "error") {
@@ -157,6 +159,10 @@ export async function openDriveViaWebRtcInvite(
     }
     if (message.type === "host-conn-state") {
       hostConnState = String(message.state || "");
+      return;
+    }
+    if (message.type === "host-net-status") {
+      hostNetStatus = message.status || hostNetStatus;
       return;
     }
 
@@ -401,6 +407,7 @@ export async function openDriveViaWebRtcInvite(
       remoteSignalError,
       hostIceState,
       hostConnState,
+      hostNetStatus,
       localIpv6GlobalHostCandidates,
       remoteIpv6GlobalHostCandidates,
       remoteAddCandidateErrors,
@@ -448,12 +455,26 @@ export async function openDriveViaWebRtcInvite(
     });
   } catch (error) {
     const maybeIceSummary = await collectIceStatsSummary(pc).catch(() => null);
+    const diagnostics = {
+      iceStats: maybeIceSummary,
+      deterministicFailure: classifyDeterministicFailure({
+        receivedAnswer,
+        hostIceState,
+        hostConnState,
+        hostNetStatus,
+        iceGatheringState: String(pc.iceGatheringState || ""),
+        answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
+        postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
+        remoteSignalError,
+        iceStats: maybeIceSummary,
+      }),
+    };
+    await stopRtc();
     if (maybeIceSummary && String(error?.message || "").includes("WebRTC channel")) {
       throw new Error(
-        `${String(error.message || error)} ${JSON.stringify({ iceStats: maybeIceSummary })}`,
+        `${String(error.message || error)} ${JSON.stringify(diagnostics)}`,
       );
     }
-    await stopRtc();
     throw error;
   } finally {
     if (offerRetryTimer) {
@@ -846,6 +867,56 @@ function parseUfragFromCandidateLine(line) {
   const match = text.match(/\bufrag\s+([^\s]+)/i);
   if (!match) return undefined;
   return String(match[1] || "").trim() || undefined;
+}
+
+function classifyDeterministicFailure(context) {
+  const remoteSignalError = String(context?.remoteSignalError || "");
+  if (remoteSignalError) {
+    return {
+      code: "REMOTE_SIGNAL_ERROR",
+      message: "Remote signaling reported a hard error",
+    };
+  }
+
+  const hostConnState = String(context?.hostConnState || "").toLowerCase();
+  const hostIceState = String(context?.hostIceState || "").toLowerCase();
+  if (hostConnState === "failed" || hostIceState === "failed") {
+    return {
+      code: "HOST_ICE_FAILED",
+      message: "Host peer connection entered failed state before data channel opened",
+    };
+  }
+
+  const receivedAnswer = Boolean(context?.receivedAnswer);
+  const gatheringState = String(context?.iceGatheringState || "").toLowerCase();
+  const stats = context?.iceStats || null;
+  const remoteCandidatesTotal = Number(stats?.remoteCandidates?.total || 0);
+  if (receivedAnswer && gatheringState === "complete" && stats && remoteCandidatesTotal === 0) {
+    return {
+      code: "NO_REMOTE_ICE_CANDIDATES",
+      message: "No remote ICE candidates were registered by browser ICE transport",
+    };
+  }
+
+  const answerAgeMs = Number(context?.answerAgeMs || 0);
+  const timeoutMs = Number(context?.postAnswerConnectTimeoutMs || 0);
+  const pairTotal = Number(stats?.candidatePairs?.total || 0);
+  const hasSelectedPair = Boolean(stats?.selectedPair);
+  if (
+    receivedAnswer &&
+    stats &&
+    !hasSelectedPair &&
+    pairTotal > 0 &&
+    timeoutMs > 0 &&
+    answerAgeMs >= timeoutMs
+  ) {
+    return {
+      code: "NO_SELECTED_CANDIDATE_PAIR",
+      message: "No ICE candidate pair was selected before timeout",
+    };
+  }
+
+  return null;
 }
 
 function nextPunchAtMs({ now, suggestedPunchAtMs, punchLeadMs }) {
