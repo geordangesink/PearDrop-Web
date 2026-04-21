@@ -96,6 +96,8 @@ export async function openDriveViaWebRtcInvite(
   let latestAckedOfferId = 0;
   let latestOfferAckStage = "";
   let latestOfferAckAt = 0;
+  let hostIceStatsAt = 0;
+  const offerAckEvents = [];
 
   const stopRtc = async () => {
     if (stopped) return;
@@ -194,6 +196,7 @@ export async function openDriveViaWebRtcInvite(
     }
     if (message.type === "host-ice-stats") {
       hostIceStats = message.stats || hostIceStats;
+      hostIceStatsAt = Date.now();
       return;
     }
     if (message.type === "offer-ack") {
@@ -203,6 +206,8 @@ export async function openDriveViaWebRtcInvite(
       }
       latestOfferAckStage = String(message.stage || "");
       latestOfferAckAt = Date.now();
+      offerAckEvents.push({ at: latestOfferAckAt, offerId, stage: latestOfferAckStage });
+      if (offerAckEvents.length > 30) offerAckEvents.shift();
       return;
     }
 
@@ -475,6 +480,8 @@ export async function openDriveViaWebRtcInvite(
       latestAckedOfferId,
       latestOfferAckStage,
       latestOfferAckAt,
+      hostIceStatsAt,
+      offerAckEvents,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -543,9 +550,29 @@ export async function openDriveViaWebRtcInvite(
         latestAckedOfferId,
         latestOfferAckStage,
         latestOfferAckAgeMs: latestOfferAckAt > 0 ? Date.now() - latestOfferAckAt : 0,
+        hostIceStatsAgeMs: hostIceStatsAt > 0 ? Date.now() - hostIceStatsAt : 0,
         answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
         postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
         remoteSignalError,
+        iceStats: maybeIceSummary,
+      }),
+      exactFailurePoint: classifyExactFailurePoint({
+        receivedAnswer,
+        localCandidatesSent,
+        remoteCandidatesApplied,
+        remoteAddCandidateErrors,
+        signalingState: String(pc.signalingState || ""),
+        currentOfferId,
+        latestAnsweredOfferId,
+        latestAckedOfferId,
+        latestOfferAckStage,
+        latestOfferAckAt,
+        offerAckEvents,
+        hostIceState,
+        hostConnState,
+        hostNetStatus,
+        hostIceStats,
+        hostIceStatsAt,
         iceStats: maybeIceSummary,
       }),
     };
@@ -1021,6 +1048,152 @@ function classifyDeterministicFailure(context) {
   }
 
   return null;
+}
+
+function classifyExactFailurePoint(context) {
+  const now = Date.now();
+  const receivedAnswer = Boolean(context?.receivedAnswer);
+  const signalingState = String(context?.signalingState || "").toLowerCase();
+  const currentOfferId = Number(context?.currentOfferId || 0);
+  const latestAnsweredOfferId = Number(context?.latestAnsweredOfferId || 0);
+  const latestAckedOfferId = Number(context?.latestAckedOfferId || 0);
+  const latestOfferAckStage = String(context?.latestOfferAckStage || "");
+  const latestOfferAckAt = Number(context?.latestOfferAckAt || 0);
+  const hostIceStatsAt = Number(context?.hostIceStatsAt || 0);
+  const browserStats = context?.iceStats || null;
+  const hostIceStats = context?.hostIceStats || null;
+  const hostFlow = context?.hostNetStatus?.remoteCandidateFlow || null;
+  const browserRemoteCandidates = Number(browserStats?.remoteCandidates?.total || 0);
+  const browserPairsTotal = Number(browserStats?.candidatePairs?.total || 0);
+  const browserPairsInProgress = Number(browserStats?.candidatePairs?.inProgress || 0);
+  const browserHasSelectedPair = Boolean(browserStats?.selectedPair);
+  const hostRemoteCandidates = Number(hostIceStats?.remoteCandidates?.total || 0);
+  const hostPairsTotal = Number(hostIceStats?.candidatePairs?.total || 0);
+  const hostPairsInProgress = Number(hostIceStats?.candidatePairs?.inProgress || 0);
+  const hostHasSelectedPair = Boolean(hostIceStats?.selectedPair);
+  const hostFlowReceived = Number(hostFlow?.received || 0);
+  const hostFlowApplied = Number(hostFlow?.applied || 0);
+  const hostFlowAddErrors = Number(hostFlow?.addErrors || 0);
+
+  if (!receivedAnswer) {
+    return {
+      stage: "signaling.answer",
+      exact: true,
+      reason: "Did not receive peer answer for current offer generation",
+      evidence: {
+        currentOfferId,
+        latestAnsweredOfferId,
+        latestAckedOfferId,
+        latestOfferAckStage,
+      },
+    };
+  }
+
+  if (signalingState === "have-local-offer" && latestAnsweredOfferId < currentOfferId) {
+    return {
+      stage: "signaling.latest-answer",
+      exact: true,
+      reason: "Latest restart offer did not get a matching answer",
+      evidence: {
+        currentOfferId,
+        latestAnsweredOfferId,
+        latestAckedOfferId,
+        latestOfferAckStage,
+        latestOfferAckAgeMs: latestOfferAckAt > 0 ? now - latestOfferAckAt : 0,
+      },
+    };
+  }
+
+  if (hostFlowReceived === 0 && Number(context?.localCandidatesSent || 0) > 0) {
+    return {
+      stage: "candidate.delivery.to-host",
+      exact: true,
+      reason: "Host did not report receiving browser ICE candidates",
+      evidence: {
+        localCandidatesSent: Number(context?.localCandidatesSent || 0),
+        hostFlowReceived,
+        latestOfferAckStage,
+      },
+    };
+  }
+
+  if (hostFlowReceived > 0 && hostFlowApplied === 0 && hostFlowAddErrors > 0) {
+    return {
+      stage: "candidate.apply.on-host",
+      exact: true,
+      reason: "Host received candidates but failed to apply them",
+      evidence: {
+        hostFlowReceived,
+        hostFlowApplied,
+        hostFlowAddErrors,
+        lastAddError: String(hostFlow?.lastAddError || ""),
+      },
+    };
+  }
+
+  if (hostFlowApplied > 0 && hostRemoteCandidates === 0 && hostIceStatsAt > 0 && now - hostIceStatsAt < 10000) {
+    return {
+      stage: "host.ice.transport.register-remote",
+      exact: true,
+      reason: "Host applied candidates but host ICE stats still show zero remote candidates",
+      evidence: {
+        hostFlowApplied,
+        hostRemoteCandidates,
+        hostIceStatsAgeMs: now - hostIceStatsAt,
+      },
+    };
+  }
+
+  if (
+    hostRemoteCandidates > 0 &&
+    browserRemoteCandidates > 0 &&
+    hostPairsTotal === 0 &&
+    browserPairsTotal === 0
+  ) {
+    return {
+      stage: "ice.pair-formation",
+      exact: true,
+      reason: "Both sides registered remote candidates but no ICE candidate pairs were formed",
+      evidence: {
+        browserRemoteCandidates,
+        hostRemoteCandidates,
+        browserPairsTotal,
+        hostPairsTotal,
+      },
+    };
+  }
+
+  if (
+    (browserPairsInProgress > 0 || hostPairsInProgress > 0) &&
+    !browserHasSelectedPair &&
+    !hostHasSelectedPair
+  ) {
+    return {
+      stage: "ice.connectivity-checks",
+      exact: true,
+      reason: "Connectivity checks ran but no pair was nominated/selected",
+      evidence: {
+        browserPairs: browserStats?.candidatePairs || null,
+        hostPairs: hostIceStats?.candidatePairs || null,
+      },
+    };
+  }
+
+  return {
+    stage: "unknown",
+    exact: false,
+    reason: "Insufficient synchronized evidence to isolate first failing stage",
+    evidence: {
+      signalingState,
+      currentOfferId,
+      latestAnsweredOfferId,
+      latestAckedOfferId,
+      latestOfferAckStage,
+      browserPairs: browserStats?.candidatePairs || null,
+      hostPairs: hostIceStats?.candidatePairs || null,
+      hostFlow,
+    },
+  };
 }
 
 function nextPunchAtMs({ now, suggestedPunchAtMs, punchLeadMs }) {
