@@ -1162,6 +1162,19 @@ function classifyExactFailurePoint(context) {
     };
   }
 
+  if (remoteCandidatesIgnoredByOfferId > 0 && browserRemoteCandidates === 0) {
+    return {
+      stage: "candidate.generation-mismatch",
+      exact: true,
+      reason: "Browser dropped remote ICE candidates from non-active offer generation",
+      evidence: {
+        remoteCandidatesIgnoredByOfferId,
+        currentOfferId,
+        latestAnsweredOfferId,
+      },
+    };
+  }
+
   if (hostFlowReceived === 0 && Number(context?.localCandidatesSent || 0) > 0) {
     return {
       stage: "candidate.delivery.to-host",
@@ -1294,15 +1307,3 @@ function scheduleLocalCandidateFlush({
   }, delayMs);
   setTimer(timer);
 }
-  if (remoteCandidatesIgnoredByOfferId > 0 && browserRemoteCandidates === 0) {
-    return {
-      stage: "candidate.generation-mismatch",
-      exact: true,
-      reason: "Browser dropped remote ICE candidates from non-active offer generation",
-      evidence: {
-        remoteCandidatesIgnoredByOfferId,
-        currentOfferId,
-        latestAnsweredOfferId,
-      },
-    };
-  }
