@@ -487,6 +487,7 @@ export async function openDriveViaWebRtcInvite(
   try {
     await waitForChannelOpen(channel, pc, timing.handshakeTimeoutMs, () => ({
       offerAttempts,
+      peerSignalReady,
       receivedAnswer,
       localCandidatesSent,
       remoteCandidatesApplied,
@@ -527,6 +528,7 @@ export async function openDriveViaWebRtcInvite(
       iceRestartAttempts,
     }), () => {
       if (!receivedAnswer && Date.now() - handshakeStartedAt > timing.noAnswerTimeoutMs) {
+        if (!peerSignalReady) return "Timed out waiting for host ready signal";
         return "Timed out waiting for peer answer";
       }
       if (remoteSignalError) return remoteSignalError;
@@ -595,6 +597,8 @@ export async function openDriveViaWebRtcInvite(
         iceStats: maybeIceSummary,
       }),
       exactFailurePoint: classifyExactFailurePoint({
+        offerAttempts,
+        peerSignalReady,
         receivedAnswer,
         localCandidatesSent,
         remoteCandidatesApplied,
@@ -1106,6 +1110,7 @@ function classifyExactFailurePoint(context) {
   const browserStats = context?.iceStats || null;
   const hostIceStats = context?.hostIceStats || null;
   const hostFlow = context?.hostNetStatus?.remoteCandidateFlow || null;
+  const hostActiveFlow = context?.hostNetStatus?.activeOfferCandidateFlow || null;
   const browserRemoteCandidates = Number(browserStats?.remoteCandidates?.total || 0);
   const remoteCandidatesIgnoredByOfferId = Number(context?.remoteCandidatesIgnoredByOfferId || 0);
   const browserPairsTotal = Number(browserStats?.candidatePairs?.total || 0);
@@ -1118,6 +1123,18 @@ function classifyExactFailurePoint(context) {
   const hostFlowReceived = Number(hostFlow?.received || 0);
   const hostFlowApplied = Number(hostFlow?.applied || 0);
   const hostFlowAddErrors = Number(hostFlow?.addErrors || 0);
+
+  if (!Boolean(context?.peerSignalReady) && !receivedAnswer) {
+    return {
+      stage: "signaling.host-ready",
+      exact: true,
+      reason: "Host ready signal was never observed before answer timeout",
+      evidence: {
+        offerAttempts: Number(context?.offerAttempts || 0),
+        peerSignalReady: Boolean(context?.peerSignalReady),
+      },
+    };
+  }
 
   if (!receivedAnswer) {
     return {
@@ -1211,6 +1228,29 @@ function classifyExactFailurePoint(context) {
         hostFlowApplied,
         hostRemoteCandidates,
         hostIceStatsAgeMs: now - hostIceStatsAt,
+      },
+    };
+  }
+
+  const hostNetIceStats = context?.hostNetStatus?.iceStats || null;
+  const hostNetPairs = Number(hostNetIceStats?.candidatePairs?.total || 0);
+  const hostNetRemote = Number(hostNetIceStats?.remoteCandidates?.total || 0);
+  if (
+    (hostNetPairs > 0 || hostNetRemote > 0) &&
+    hostPairsTotal === 0 &&
+    hostRemoteCandidates === 0 &&
+    Number(hostActiveFlow?.applied || 0) > 0
+  ) {
+    return {
+      stage: "host.ice.post-apply-collapse",
+      exact: true,
+      reason: "Host had active ICE checks for this flow, then host ICE stats collapsed to zero without selection",
+      evidence: {
+        hostNetPairs,
+        hostNetRemote,
+        hostPairsTotal,
+        hostRemoteCandidates,
+        hostActiveFlow,
       },
     };
   }
