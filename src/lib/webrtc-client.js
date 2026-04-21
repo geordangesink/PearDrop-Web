@@ -77,6 +77,7 @@ export async function openDriveViaWebRtcInvite(
   let hostIceState = "";
   let hostConnState = "";
   let hostNetStatus = null;
+  let hostIceStats = null;
   let iceRestartAttempts = 0;
   const maxIceRestartAttempts = 2;
   let remoteAddCandidateErrors = 0;
@@ -92,6 +93,9 @@ export async function openDriveViaWebRtcInvite(
   let requestIceRestart = () => {};
   let currentOfferId = 0;
   let latestAnsweredOfferId = 0;
+  let latestAckedOfferId = 0;
+  let latestOfferAckStage = "";
+  let latestOfferAckAt = 0;
 
   const stopRtc = async () => {
     if (stopped) return;
@@ -186,6 +190,19 @@ export async function openDriveViaWebRtcInvite(
     }
     if (message.type === "host-net-status") {
       hostNetStatus = message.status || hostNetStatus;
+      return;
+    }
+    if (message.type === "host-ice-stats") {
+      hostIceStats = message.stats || hostIceStats;
+      return;
+    }
+    if (message.type === "offer-ack") {
+      const offerId = Number(message.offerId || 0);
+      if (offerId > 0) {
+        latestAckedOfferId = Math.max(latestAckedOfferId, offerId);
+      }
+      latestOfferAckStage = String(message.stage || "");
+      latestOfferAckAt = Date.now();
       return;
     }
 
@@ -447,6 +464,7 @@ export async function openDriveViaWebRtcInvite(
       hostIceState,
       hostConnState,
       hostNetStatus,
+      hostIceStats,
       localIpv6GlobalHostCandidates,
       remoteIpv6GlobalHostCandidates,
       remoteAddCandidateErrors,
@@ -454,6 +472,9 @@ export async function openDriveViaWebRtcInvite(
       activePunchAtMs,
       currentOfferId,
       latestAnsweredOfferId,
+      latestAckedOfferId,
+      latestOfferAckStage,
+      latestOfferAckAt,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
       lastLocalCandidateAt,
@@ -514,10 +535,14 @@ export async function openDriveViaWebRtcInvite(
         hostIceState,
         hostConnState,
         hostNetStatus,
+        hostIceStats,
         iceGatheringState: String(pc.iceGatheringState || ""),
         signalingState: String(pc.signalingState || ""),
         currentOfferId,
         latestAnsweredOfferId,
+        latestAckedOfferId,
+        latestOfferAckStage,
+        latestOfferAckAgeMs: latestOfferAckAt > 0 ? Date.now() - latestOfferAckAt : 0,
         answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
         postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
         remoteSignalError,
@@ -935,7 +960,16 @@ function classifyDeterministicFailure(context) {
 
   const hostConnState = String(context?.hostConnState || "").toLowerCase();
   const hostIceState = String(context?.hostIceState || "").toLowerCase();
+  const hostIceStats = context?.hostIceStats || null;
+  const hostRemoteCandidates = Number(hostIceStats?.remoteCandidates?.total || 0);
+  const hostPairTotal = Number(hostIceStats?.candidatePairs?.total || 0);
   if (hostConnState === "failed" || hostIceState === "failed") {
+    if (hostPairTotal === 0 && hostRemoteCandidates === 0) {
+      return {
+        code: "HOST_NEVER_REGISTERED_REMOTE_CANDIDATES",
+        message: "Host ICE transport never registered browser remote candidates",
+      };
+    }
     return {
       code: "HOST_ICE_FAILED",
       message: "Host peer connection entered failed state before data channel opened",
@@ -945,6 +979,14 @@ function classifyDeterministicFailure(context) {
   const receivedAnswer = Boolean(context?.receivedAnswer);
   const signalingState = String(context?.signalingState || "").toLowerCase();
   if (receivedAnswer && signalingState === "have-local-offer") {
+    const currentOfferId = Number(context?.currentOfferId || 0);
+    const latestAckedOfferId = Number(context?.latestAckedOfferId || 0);
+    if (currentOfferId > 0 && latestAckedOfferId < currentOfferId) {
+      return {
+        code: "LATEST_OFFER_NOT_ACKED_BY_HOST",
+        message: "Host did not acknowledge receiving the latest restart offer",
+      };
+    }
     return {
       code: "NO_ANSWER_FOR_LATEST_OFFER",
       message: "Browser is still waiting for answer to latest restart offer",
