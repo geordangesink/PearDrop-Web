@@ -578,9 +578,15 @@ async function joinInvite() {
     currentSession = null;
     clearPreviewCache();
 
+    let offerSendCount = 0;
     const applyJoinPhase = (phase) => {
       const step = JOIN_PHASES[String(phase || "")];
       if (!step) return;
+      if (String(phase || "") === "offer-send") {
+        offerSendCount += 1;
+        setJoinProgress(step.value, `Sending offer to peer (${offerSendCount}/6)...`);
+        return;
+      }
       setJoinProgress(step.value, step.label);
     };
     const maybeTestOpenDrive = globalThis.__PEARDROPS_TEST_OPEN_DRIVE__;

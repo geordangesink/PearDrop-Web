@@ -50,6 +50,7 @@ export async function openDriveViaWebRtcInvite(
   const peer = createDataChannelRpc(channel);
   let remoteDescriptionSet = false;
   const pendingRemoteCandidates = [];
+  let peerSignalReady = false;
   let receivedAnswer = false;
   let localCandidatesSent = 0;
   let remoteCandidatesApplied = 0;
@@ -69,6 +70,11 @@ export async function openDriveViaWebRtcInvite(
   };
 
   signal.onMessage(async (message) => {
+    if (message.type === "ready") {
+      peerSignalReady = true;
+      return;
+    }
+
     if (message.type === "answer" && message.sdp) {
       await pc.setRemoteDescription({ type: "answer", sdp: message.sdp });
       remoteDescriptionSet = true;
@@ -107,6 +113,7 @@ export async function openDriveViaWebRtcInvite(
   };
 
   const sendOffer = async ({ restartIce = false } = {}) => {
+    if (!peerSignalReady) return;
     if (offerInFlight) return;
     if (offerAttempts >= maxOfferAttempts) return;
     offerInFlight = true;
@@ -125,9 +132,15 @@ export async function openDriveViaWebRtcInvite(
     }
   };
 
+  await waitForCondition(
+    () => peerSignalReady,
+    9000,
+    "Timed out waiting for peer signaling readiness",
+  );
   await sendOffer();
   const offerRetryTimer = setInterval(() => {
     if (channel.readyState === "open") return;
+    if (!peerSignalReady) return;
     if (offerAttempts >= maxOfferAttempts) return;
     void sendOffer({ restartIce: true });
   }, 3500);
@@ -357,6 +370,28 @@ function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null) {
     if (pc && typeof pc.addEventListener === "function") {
       pc.addEventListener("connectionstatechange", onPcState);
     }
+  });
+}
+
+function waitForCondition(test, timeoutMs, errorMessage) {
+  if (typeof test === "function" && test()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const tick = () => {
+      if (typeof test === "function" && test()) {
+        clearInterval(interval);
+        clearTimeout(timer);
+        resolve();
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        clearInterval(interval);
+        clearTimeout(timer);
+        reject(new Error(errorMessage || "Timed out waiting for condition"));
+      }
+    };
+    const interval = setInterval(tick, 120);
+    const timer = setTimeout(tick, timeoutMs + 25);
   });
 }
 
