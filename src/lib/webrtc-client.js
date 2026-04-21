@@ -25,6 +25,13 @@ export async function openDriveViaWebRtcInvite(
   const { DHT, RelayStream, b4a } = libs;
   const emitPhase =
     typeof options?.onPhase === "function" ? options.onPhase : () => {};
+  const timing = {
+    signalReadyTimeoutMs: Number(options?.timing?.signalReadyTimeoutMs || 2500),
+    noAnswerTimeoutMs: Number(options?.timing?.noAnswerTimeoutMs || 12000),
+    handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 38000),
+    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 28000),
+    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 10000),
+  };
   if (!parsed.signalKey) throw new Error("Invite is missing signal key");
   if (!parsed.nativeInvite) {
     throw new Error("Invite is missing native invite context");
@@ -65,6 +72,8 @@ export async function openDriveViaWebRtcInvite(
   let lastOfferSentAt = 0;
   let remoteSignalError = "";
   let answerReceivedAt = 0;
+  let lastLocalCandidateAt = 0;
+  let lastRemoteCandidateAt = 0;
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -144,6 +153,7 @@ export async function openDriveViaWebRtcInvite(
         remoteCandidatesDropped += 1;
         return;
       }
+      lastRemoteCandidateAt = Date.now();
       if (!remoteDescriptionSet) {
         pendingRemoteCandidates.push(message.candidate);
         return;
@@ -173,6 +183,7 @@ export async function openDriveViaWebRtcInvite(
       if (isRelayIceCandidate(event.candidate)) return;
       if (isMdnsIceCandidate(event.candidate)) return;
       localCandidatesSent += 1;
+      lastLocalCandidateAt = Date.now();
       signal.send({ type: "candidate", candidate: event.candidate });
       return;
     }
@@ -231,7 +242,7 @@ export async function openDriveViaWebRtcInvite(
 
   await waitForCondition(
     () => peerSignalReady,
-    2500,
+    timing.signalReadyTimeoutMs,
     "Timed out waiting for peer signaling readiness",
   ).catch(() => {});
   await sendOffer({ restartIce: false });
@@ -251,7 +262,7 @@ export async function openDriveViaWebRtcInvite(
   emitPhase("peer-handshake");
   const handshakeStartedAt = Date.now();
   try {
-    await waitForChannelOpen(channel, pc, 24000, () => ({
+    await waitForChannelOpen(channel, pc, timing.handshakeTimeoutMs, () => ({
       offerAttempts,
       receivedAnswer,
       localCandidatesSent,
@@ -267,16 +278,27 @@ export async function openDriveViaWebRtcInvite(
       remoteSignalError,
       answerReceivedAt,
       answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
+      lastLocalCandidateAt,
+      lastRemoteCandidateAt,
+      localCandidateIdleMs: lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : 0,
+      remoteCandidateIdleMs: lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : 0,
     }), () => {
-      if (!receivedAnswer && Date.now() - handshakeStartedAt > 12000) {
+      if (!receivedAnswer && Date.now() - handshakeStartedAt > timing.noAnswerTimeoutMs) {
         return "Timed out waiting for peer answer";
       }
       if (remoteSignalError) return remoteSignalError;
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
       const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
       if (!receivedAnswer) return "";
-      if (Date.now() - answerReceivedAt > 12000) {
-        return "Timed out waiting for ICE connect after peer answer";
+      const answerAgeMs = Date.now() - answerReceivedAt;
+      if (answerAgeMs > timing.postAnswerConnectTimeoutMs) {
+        const gatheringState = String(pc.iceGatheringState || "");
+        const localIdleMs = lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : Infinity;
+        const remoteIdleMs = lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : Infinity;
+        const maxIdleMs = Math.max(localIdleMs, remoteIdleMs);
+        if (gatheringState === "complete" || maxIdleMs > timing.postAnswerIdleTimeoutMs) {
+          return "Timed out waiting for ICE connect after peer answer";
+        }
       }
       if (String(pc.iceGatheringState || "") !== "complete") return "";
       if (localDirect > 0 || remoteDirect > 0) return "";
