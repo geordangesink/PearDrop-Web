@@ -63,6 +63,7 @@ export async function openDriveViaWebRtcInvite(
   const maxOfferAttempts = 6;
   let offerInFlight = false;
   let lastOfferSentAt = 0;
+  let remoteSignalError = "";
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -109,6 +110,10 @@ export async function openDriveViaWebRtcInvite(
       peerSignalReady = true;
       return;
     }
+    if (message.type === "error") {
+      remoteSignalError = String(message.error || message.message || "Remote signaling error");
+      return;
+    }
 
     if (message.type === "answer" && message.sdp) {
       await pc.setRemoteDescription({
@@ -153,18 +158,45 @@ export async function openDriveViaWebRtcInvite(
     }
   };
 
-  const sendOffer = async ({ restartIce = false } = {}) => {
+  const createLocalOffer = async ({ restartIce = false } = {}) => {
     if (stopped) return;
     if (!peerSignalReady) return;
     if (offerInFlight) return;
-    if (offerAttempts >= maxOfferAttempts) return;
     offerInFlight = true;
     try {
       emitPhase("offer-create");
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
+    } finally {
+      offerInFlight = false;
+    }
+  };
+
+  const sendCurrentOffer = () => {
+    if (stopped) return;
+    if (!peerSignalReady) return;
+    if (offerAttempts >= maxOfferAttempts) return;
+    const current = String(pc?.localDescription?.sdp || "");
+    if (!current) return;
+    emitPhase("offer-send");
+    const sdp = sanitizeIceSdp(current);
+    signal.send({
+      type: "offer",
+      sdp,
+    });
+    offerAttempts += 1;
+    lastOfferSentAt = Date.now();
+  };
+
+  const sendOffer = async ({ restartIce = false } = {}) => {
+    await createLocalOffer({ restartIce });
+    if (stopped) return;
+    if (!peerSignalReady) return;
+    if (offerAttempts >= maxOfferAttempts) return;
+    offerInFlight = true;
+    try {
       emitPhase("offer-send");
-      const sdp = sanitizeIceSdp(String(offer.sdp || ""));
+      const sdp = sanitizeIceSdp(String(pc?.localDescription?.sdp || ""));
       signal.send({
         type: "offer",
         sdp,
@@ -181,15 +213,16 @@ export async function openDriveViaWebRtcInvite(
     2500,
     "Timed out waiting for peer signaling readiness",
   ).catch(() => {});
-  await sendOffer();
+  await sendOffer({ restartIce: false });
   offerRetryTimer = setInterval(() => {
     if (stopped) return;
     if (channel.readyState === "open") return;
     if (!peerSignalReady) return;
     if (receivedAnswer) return;
     if (offerAttempts >= maxOfferAttempts) return;
-    void sendOffer({ restartIce: true });
-  }, 2200);
+    // Before first answer, re-send the same offer instead of repeated ICE restarts.
+    sendCurrentOffer();
+  }, 1800);
 
   const maybeRestartIce = () => {
     if (stopped) return;
@@ -222,7 +255,9 @@ export async function openDriveViaWebRtcInvite(
       iceGatheringState: String(pc.iceGatheringState || ""),
       iceConnectionState: String(pc.iceConnectionState || ""),
       connectionState: String(pc.connectionState || ""),
+      remoteSignalError,
     }), () => {
+      if (remoteSignalError) return remoteSignalError;
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
       const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
       if (!receivedAnswer) return "";
