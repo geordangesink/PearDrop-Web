@@ -155,22 +155,24 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "candidate" && message.candidate) {
-      bumpCandidateKind(remoteCandidateKinds, message.candidate);
-      if (isRelayIceCandidate(message.candidate)) {
+      const normalized = normalizeCandidateForSignal(message.candidate);
+      if (!normalized) return;
+      bumpCandidateKind(remoteCandidateKinds, normalized);
+      if (isRelayIceCandidate(normalized)) {
         remoteCandidatesDropped += 1;
         return;
       }
-      if (isMdnsIceCandidate(message.candidate)) {
+      if (isMdnsIceCandidate(normalized)) {
         remoteCandidatesDropped += 1;
         return;
       }
       lastRemoteCandidateAt = Date.now();
       if (!remoteDescriptionSet) {
-        pendingRemoteCandidates.push(message.candidate);
+        pendingRemoteCandidates.push(normalized);
         return;
       }
       try {
-        await pc.addIceCandidate(message.candidate);
+        await pc.addIceCandidate(normalized);
         remoteCandidatesApplied += 1;
       } catch {}
       return;
@@ -190,12 +192,14 @@ export async function openDriveViaWebRtcInvite(
   pc.onicecandidate = (event) => {
     if (stopped) return;
     if (event.candidate) {
-      bumpCandidateKind(localCandidateKinds, event.candidate);
-      if (isRelayIceCandidate(event.candidate)) return;
-      if (isMdnsIceCandidate(event.candidate)) return;
+      const normalized = normalizeCandidateForSignal(event.candidate);
+      if (!normalized) return;
+      bumpCandidateKind(localCandidateKinds, normalized);
+      if (isRelayIceCandidate(normalized)) return;
+      if (isMdnsIceCandidate(normalized)) return;
       localCandidatesSent += 1;
       lastLocalCandidateAt = Date.now();
-      signal.send({ type: "candidate", candidate: event.candidate });
+      signal.send({ type: "candidate", candidate: normalized });
       return;
     }
     signal.send({ type: "candidate-end", endOfCandidates: true });
@@ -697,4 +701,23 @@ async function collectIceStatsSummary(pc) {
     }
   }
   return summary;
+}
+
+function normalizeCandidateForSignal(candidateLike) {
+  const source =
+    candidateLike && typeof candidateLike === "object" && typeof candidateLike.toJSON === "function"
+      ? candidateLike.toJSON()
+      : candidateLike;
+  const candidate = String(source?.candidate || "");
+  if (!candidate) return null;
+  const sdpMid =
+    source?.sdpMid === null || typeof source?.sdpMid === "string" ? source.sdpMid : null;
+  const sdpMLineIndex = Number.isInteger(source?.sdpMLineIndex)
+    ? Number(source.sdpMLineIndex)
+    : 0;
+  const usernameFragment =
+    typeof source?.usernameFragment === "string" ? source.usernameFragment : undefined;
+  const normalized = { candidate, sdpMid, sdpMLineIndex };
+  if (usernameFragment) normalized.usernameFragment = usernameFragment;
+  return normalized;
 }
