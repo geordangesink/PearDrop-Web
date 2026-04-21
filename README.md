@@ -5,9 +5,10 @@ Browser join/download client for PearDrop native uploaders.
 ## Architecture
 
 - web app parses `peardrops://invite` URLs
-- uses `@hyperswarm/dht-relay` over WebSocket transport to reach uploader swarm
-- reads remote manifest and downloads file bytes directly from peer drive stream
-- relay server only forwards DHT control traffic, not file storage
+- requires WebRTC-enabled invites (`signal` key) for browser downloads
+- uses `@hyperswarm/dht-relay` for signaling transport/bootstrap
+- transfers manifest/file data over direct WebRTC data channels once connected
+- TODO: evaluate a future non-WebRTC fallback with equivalent privacy guarantees
 
 ## Run
 

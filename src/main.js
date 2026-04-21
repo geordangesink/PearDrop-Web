@@ -1484,6 +1484,14 @@ async function openDriveViaRelay(parsed) {
 }
 
 async function openDriveFromInvite(parsed, options = {}) {
+  if (!parsed.signalKey) {
+    // TODO: Consider reintroducing non-WebRTC fallback in a future release
+    // when we can guarantee equivalent privacy semantics end-to-end.
+    throw new Error(
+      "This web client requires a WebRTC-enabled invite (missing signal key).",
+    );
+  }
+
   const relayUrl = relayUrlForInvite(parsed, location);
   const [{ default: DHT }, { default: RelayStream }, { default: b4a }] =
     await Promise.all([
@@ -1492,20 +1500,16 @@ async function openDriveFromInvite(parsed, options = {}) {
       import("b4a"),
     ]);
 
-  if (parsed.signalKey) {
-    return openDriveViaWebRtcInvite(
-      parsed,
-      relayUrl,
-      {
-        DHT,
-        RelayStream,
-        b4a,
-      },
-      options,
-    );
-  }
-
-  return openDriveViaRelay(parsed);
+  return openDriveViaWebRtcInvite(
+    parsed,
+    relayUrl,
+    {
+      DHT,
+      RelayStream,
+      b4a,
+    },
+    options,
+  );
 }
 
 function onceOpen(socket) {
