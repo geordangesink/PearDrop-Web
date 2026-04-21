@@ -82,7 +82,7 @@ export async function openDriveViaWebRtcInvite(
   let hostIceState = "";
   let hostConnState = "";
   let iceRestartAttempts = 0;
-  const maxIceRestartAttempts = 2;
+  const maxIceRestartAttempts = 1;
   let remoteAddCandidateErrors = 0;
   let lastRemoteAddCandidateError = "";
   let activePunchAtMs = 0;
@@ -90,6 +90,7 @@ export async function openDriveViaWebRtcInvite(
   let localCandidateQueue = [];
   let localCandidateFlushTimer = null;
   let handshakeStatsTimer = null;
+  let latestIceStatsSummary = null;
   let stopped = false;
   let offerRetryTimer = null;
 
@@ -331,6 +332,11 @@ export async function openDriveViaWebRtcInvite(
     if (iceRestartAttempts >= maxIceRestartAttempts) return false;
     if (offerAttempts >= maxOfferAttempts) return false;
     if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) return false;
+    const pairTotal = Number(latestIceStatsSummary?.candidatePairs?.total || 0);
+    const pairInProgress = Number(latestIceStatsSummary?.candidatePairs?.inProgress || 0);
+    const remoteTotal = Number(latestIceStatsSummary?.remoteCandidates?.total || 0);
+    // If ICE is actively probing candidate pairs, avoid restart churn that can reset progress.
+    if (pairTotal > 0 && pairInProgress > 0 && remoteTotal > 0) return false;
     iceRestartAttempts += 1;
     await sendOffer({ restartIce: true });
     return true;
@@ -368,6 +374,7 @@ export async function openDriveViaWebRtcInvite(
     void collectIceStatsSummary(pc)
       .then((summary) => {
         if (!summary) return;
+        latestIceStatsSummary = summary;
         emitPhase("peer-handshake", {
           pairCounts: summary.candidatePairs || null,
           localCandidates: summary.localCandidates || null,
