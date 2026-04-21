@@ -76,7 +76,10 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "answer" && message.sdp) {
-      await pc.setRemoteDescription({ type: "answer", sdp: message.sdp });
+      await pc.setRemoteDescription({
+        type: "answer",
+        sdp: sanitizeIceSdp(String(message.sdp || "")),
+      });
       remoteDescriptionSet = true;
       receivedAnswer = true;
       await flushPendingCandidates();
@@ -122,9 +125,10 @@ export async function openDriveViaWebRtcInvite(
       const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
       await pc.setLocalDescription(offer);
       emitPhase("offer-send");
+      const sdp = sanitizeIceSdp(String(offer.sdp || ""));
       signal.send({
         type: "offer",
-        sdp: offer.sdp,
+        sdp,
       });
       offerAttempts += 1;
     } finally {
@@ -409,4 +413,24 @@ function isMdnsIceCandidate(candidateLike) {
       ? candidateLike
       : String(candidateLike?.candidate || "");
   return /\b[a-z0-9-]+\.local\b/i.test(candidateLine);
+}
+
+function sanitizeIceSdp(sdpText) {
+  const raw = String(sdpText || "");
+  if (!raw) return raw;
+  const lines = raw.split(/\r?\n/);
+  const out = [];
+  for (const line of lines) {
+    const value = String(line || "");
+    if (!value) {
+      out.push(value);
+      continue;
+    }
+    if (value.startsWith("a=candidate:")) {
+      if (isRelayIceCandidate(value)) continue;
+      if (isMdnsIceCandidate(value)) continue;
+    }
+    out.push(value);
+  }
+  return out.join("\r\n");
 }
