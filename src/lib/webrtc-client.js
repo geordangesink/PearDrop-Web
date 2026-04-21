@@ -66,6 +66,8 @@ export async function openDriveViaWebRtcInvite(
   let remoteCandidatesDropped = 0;
   const localCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
   const remoteCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
+  let localIpv6GlobalHostCandidates = 0;
+  let remoteIpv6GlobalHostCandidates = 0;
   let offerAttempts = 0;
   const maxOfferAttempts = 4;
   let offerInFlight = false;
@@ -160,6 +162,7 @@ export async function openDriveViaWebRtcInvite(
       const normalized = normalizeCandidateForSignal(message.candidate);
       if (!normalized) return;
       bumpCandidateKind(remoteCandidateKinds, normalized);
+      if (isGlobalIpv6HostCandidate(normalized)) remoteIpv6GlobalHostCandidates += 1;
       if (isRelayIceCandidate(normalized)) {
         remoteCandidatesDropped += 1;
         return;
@@ -202,6 +205,7 @@ export async function openDriveViaWebRtcInvite(
       const normalized = normalizeCandidateForSignal(event.candidate);
       if (!normalized) return;
       bumpCandidateKind(localCandidateKinds, normalized);
+      if (isGlobalIpv6HostCandidate(normalized)) localIpv6GlobalHostCandidates += 1;
       if (isRelayIceCandidate(normalized)) return;
       if (isMdnsIceCandidate(normalized)) return;
       localCandidatesSent += 1;
@@ -324,6 +328,8 @@ export async function openDriveViaWebRtcInvite(
       remoteSignalError,
       hostIceState,
       hostConnState,
+      localIpv6GlobalHostCandidates,
+      remoteIpv6GlobalHostCandidates,
       remoteAddCandidateErrors,
       lastRemoteAddCandidateError,
       answerReceivedAt,
@@ -340,6 +346,8 @@ export async function openDriveViaWebRtcInvite(
       if (remoteSignalError) return remoteSignalError;
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
       const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
+      const hasGlobalIpv6HostPath =
+        localIpv6GlobalHostCandidates > 0 || remoteIpv6GlobalHostCandidates > 0;
       if (!receivedAnswer) return "";
       const answerAgeMs = Date.now() - answerReceivedAt;
       if (answerAgeMs > timing.postAnswerConnectTimeoutMs) {
@@ -361,7 +369,7 @@ export async function openDriveViaWebRtcInvite(
         }
       }
       if (String(pc.iceGatheringState || "") !== "complete") return "";
-      if (localDirect > 0 || remoteDirect > 0) return "";
+      if (localDirect > 0 || remoteDirect > 0 || hasGlobalIpv6HostPath) return "";
       return "No reflexive ICE candidates available for direct cross-network route";
     });
   } catch (error) {
@@ -592,6 +600,23 @@ function parseCandidateKind(candidateLike) {
   if (!line) return "other";
   const match = line.match(/\btyp\s+(host|srflx|prflx|relay)\b/i);
   return match ? String(match[1] || "").toLowerCase() : "other";
+}
+
+function isGlobalIpv6HostCandidate(candidateLike) {
+  const line =
+    typeof candidateLike === "string"
+      ? candidateLike
+      : String(candidateLike?.candidate || "");
+  if (!/\btyp\s+host\b/i.test(line)) return false;
+  const match = line.match(/\bcandidate:[^\s]+\s+\d+\s+udp\s+\d+\s+([^\s]+)\s+\d+\s+typ\s+host\b/i);
+  if (!match) return false;
+  const address = String(match[1] || "").trim();
+  if (!address || !address.includes(":")) return false;
+  const normalized = address.replace(/^\[|\]$/g, "").toLowerCase();
+  if (normalized === "::1") return false;
+  if (normalized.startsWith("fe80:")) return false;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return false;
+  return true;
 }
 
 function waitForCondition(test, timeoutMs, errorMessage) {
