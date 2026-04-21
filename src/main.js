@@ -584,7 +584,7 @@ async function joinInvite() {
       if (!step) return;
       if (String(phase || "") === "offer-send") {
         offerSendCount += 1;
-        setJoinProgress(step.value, `Sending offer to peer (${offerSendCount}/6)...`);
+        setJoinProgress(step.value, `Sending offer to peer (${offerSendCount})...`);
         return;
       }
       setJoinProgress(step.value, step.label);
