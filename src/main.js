@@ -6,7 +6,11 @@ import {
   safeClose,
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
-import { buildWebClientInviteUrl, toNativeInviteUrl } from "./lib/app-links.js";
+import {
+  buildWebClientInviteUrl,
+  toInviteUrl,
+  toNativeInviteUrl,
+} from "./lib/app-links.js";
 
 if (typeof globalThis.global === "undefined") {
   globalThis.global = globalThis;
@@ -1648,7 +1652,7 @@ function normalizeInviteInput(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   if (text.startsWith("Join failed:")) return "";
-  return toNativeInviteUrl(text) || text;
+  return toInviteUrl(text) || text;
 }
 
 function openAppWithFallback(nativeInvite) {

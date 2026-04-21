@@ -100,33 +100,23 @@ export function buildDownloadPageUrl({
 }
 
 export function buildWebClientInviteUrl(invite = "") {
-  const safeInvite = toNativeInviteUrl(invite);
+  const safeInvite = toInviteUrl(invite);
   if (!safeInvite) return "/web-client/";
   return `/web-client/?invite=${encodeURIComponent(safeInvite)}`;
 }
 
 export function buildOpenInviteLink(invite = "", { absolute = true } = {}) {
-  const safeInvite = toNativeInviteUrl(invite);
+  const safeInvite = toInviteUrl(invite);
   if (!safeInvite) return absolute ? `${APP_LINKS.siteOrigin}/open/` : "/open/";
   const path = `/open/?invite=${encodeURIComponent(safeInvite)}`;
   return absolute ? `${APP_LINKS.siteOrigin}${path}` : path;
 }
 
-export function toNativeInviteUrl(value) {
+export function toInviteUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
+  if (raw.startsWith("peardrops-web://join")) return raw;
   if (raw.startsWith("peardrops://invite")) return raw;
-
-  if (raw.startsWith("peardrops-web://join")) {
-    try {
-      const parsed = new URL(raw);
-      const nested = parsed.searchParams.get("invite");
-      if (nested && nested.startsWith("peardrops://invite")) return nested;
-      if (parsed.search) return `peardrops://invite${parsed.search}`;
-    } catch {
-      return "";
-    }
-  }
 
   try {
     const parsed = new URL(raw);
@@ -134,19 +124,51 @@ export function toNativeInviteUrl(value) {
 
     if (protocol === "http:" || protocol === "https:") {
       const nested = parsed.searchParams.get("invite");
-      if (nested) return toNativeInviteUrl(nested);
+      if (nested) return toInviteUrl(nested);
       if (hasInviteCoordinates(parsed.searchParams)) {
         return `peardrops://invite${parsed.search || ""}`;
       }
       return "";
     }
 
+    if (protocol === "peardrops-web:") {
+      const nested = parsed.searchParams.get("invite");
+      if (nested) return toInviteUrl(nested);
+      if (hasInviteCoordinates(parsed.searchParams)) {
+        return `peardrops-web://join${parsed.search || ""}`;
+      }
+      return "";
+    }
+
     if (protocol === "peardrops:") {
       const nested = parsed.searchParams.get("invite");
-      if (nested) return toNativeInviteUrl(nested);
+      if (nested) return toInviteUrl(nested);
       if (hasInviteCoordinates(parsed.searchParams)) {
         return `peardrops://invite${parsed.search || ""}`;
       }
+    }
+  } catch {}
+
+  return "";
+}
+
+export function toNativeInviteUrl(value) {
+  const invite = toInviteUrl(value);
+  if (!invite) return "";
+  if (invite.startsWith("peardrops://invite")) return invite;
+
+  if (invite.startsWith("peardrops-web://join")) {
+    try {
+      const parsed = new URL(invite);
+      const nested = parsed.searchParams.get("invite");
+      if (nested && nested.startsWith("peardrops://invite")) return nested;
+    } catch {}
+  }
+
+  try {
+    const parsed = new URL(invite);
+    if (hasInviteCoordinates(parsed.searchParams)) {
+      return `peardrops://invite${parsed.search || ""}`;
     }
   } catch {}
 

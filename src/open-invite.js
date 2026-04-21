@@ -1,9 +1,10 @@
-import { toNativeInviteUrl } from "./lib/app-links.js";
+import { toInviteUrl, toNativeInviteUrl } from "./lib/app-links.js";
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 const rawInvite = params.get("invite") || "";
-const invite = toNativeInviteUrl(rawInvite);
+const invite = toInviteUrl(rawInvite);
+const nativeInvite = toNativeInviteUrl(invite);
 const fallbackUrl = invite
   ? `/web-client/?invite=${encodeURIComponent(invite)}`
   : "/web-client/";
@@ -60,10 +61,15 @@ if (!invite) {
   if (hintEl) hintEl.textContent = "Invite missing. Opening web client.";
   location.replace("/web-client/");
 } else {
-  openAppWithFallback(invite, fallbackUrl);
+  openAppWithFallback(nativeInvite, fallbackUrl);
 }
 
 function openAppWithFallback(nativeInvite, webUrl) {
+  if (!nativeInvite) {
+    if (hintEl) hintEl.textContent = "Native invite missing. Opening web client...";
+    location.replace(webUrl);
+    return;
+  }
   let done = false;
   let timer = null;
 
