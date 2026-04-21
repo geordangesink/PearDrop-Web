@@ -144,6 +144,17 @@ export async function openDriveViaWebRtcInvite(
         await pc.addIceCandidate(message.candidate);
         remoteCandidatesApplied += 1;
       } catch {}
+      return;
+    }
+
+    if (message.type === "candidate-end" || message.endOfCandidates === true) {
+      if (!remoteDescriptionSet) {
+        pendingRemoteCandidates.push(null);
+        return;
+      }
+      try {
+        await pc.addIceCandidate(null);
+      } catch {}
     }
   });
 
@@ -155,7 +166,9 @@ export async function openDriveViaWebRtcInvite(
       if (isMdnsIceCandidate(event.candidate)) return;
       localCandidatesSent += 1;
       signal.send({ type: "candidate", candidate: event.candidate });
+      return;
     }
+    signal.send({ type: "candidate-end", endOfCandidates: true });
   };
 
   const createLocalOffer = async ({ restartIce = false } = {}) => {
