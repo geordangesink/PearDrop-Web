@@ -241,8 +241,9 @@ export async function openDriveViaWebRtcInvite(
   };
 
   emitPhase("peer-handshake");
+  const handshakeStartedAt = Date.now();
   try {
-    await waitForChannelOpen(channel, pc, 28000, () => ({
+    await waitForChannelOpen(channel, pc, 42000, () => ({
       offerAttempts,
       receivedAnswer,
       localCandidatesSent,
@@ -257,6 +258,9 @@ export async function openDriveViaWebRtcInvite(
       connectionState: String(pc.connectionState || ""),
       remoteSignalError,
     }), () => {
+      if (!receivedAnswer && Date.now() - handshakeStartedAt > 12000) {
+        return "Timed out waiting for peer answer";
+      }
       if (remoteSignalError) return remoteSignalError;
       const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
       const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
