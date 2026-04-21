@@ -1,16 +1,15 @@
-# PearDrop Web (MVP)
+# PearDrop Web
 
-Browser join/download client for PearDrop native uploaders.
+Browser client for opening invite links and downloading from active native hosts.
 
-## Architecture
+## Dev Architecture
 
-- web app parses `peardrops://invite` URLs
-- requires WebRTC-enabled invites (`signal` key) for browser downloads
-- uses `@hyperswarm/dht-relay` for signaling transport/bootstrap
-- transfers manifest/file data over direct WebRTC data channels once connected
-- TODO: evaluate a future non-WebRTC fallback with equivalent privacy guarantees
+- Invite pages normalize and route shared links.
+- Join/download UI uses WebRTC-enabled invites (`signal` key required).
+- Signaling/bootstrap uses `@hyperswarm/dht-relay`.
+- File transfer flows through WebRTC data channels once peers connect.
 
-## Run
+## Local Run
 
 ```bash
 npm install
@@ -18,15 +17,13 @@ npm run relay
 npm run dev
 ```
 
-If the relay runs on another host, include it in the invite as `relay` query param.
-
-## Test
+## Tests
 
 ```bash
 npm test
 ```
 
-Production build:
+## Build
 
 ```bash
 npm run build
