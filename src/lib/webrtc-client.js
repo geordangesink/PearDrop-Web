@@ -381,9 +381,13 @@ export async function openDriveViaWebRtcInvite(
     if (stopped) return;
     if (channel.readyState === "open") return;
     if (!peerSignalReady) return;
-    if (receivedAnswer) return;
+    const signalingState = String(pc?.signalingState || "");
+    // Keep retrying the current offer while we're still waiting for an answer.
+    // This applies before the first answer and after ICE-restart re-offers.
+    if (receivedAnswer && signalingState !== "have-local-offer") return;
     if (offerAttempts >= maxOfferAttempts) return;
-    // Before first answer, re-send the same offer instead of repeated ICE restarts.
+    if (Date.now() - lastOfferSentAt < timing.preAnswerOfferRetryMs) return;
+    // Re-send the same local offer instead of immediately creating a fresh generation.
     sendCurrentOffer();
   }, timing.preAnswerOfferRetryMs);
 
@@ -501,6 +505,7 @@ export async function openDriveViaWebRtcInvite(
         hostConnState,
         hostNetStatus,
         iceGatheringState: String(pc.iceGatheringState || ""),
+        signalingState: String(pc.signalingState || ""),
         answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
         postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
         remoteSignalError,
@@ -926,6 +931,13 @@ function classifyDeterministicFailure(context) {
   }
 
   const receivedAnswer = Boolean(context?.receivedAnswer);
+  const signalingState = String(context?.signalingState || "").toLowerCase();
+  if (receivedAnswer && signalingState === "have-local-offer") {
+    return {
+      code: "NO_ANSWER_FOR_LATEST_OFFER",
+      message: "Browser is still waiting for answer to latest restart offer",
+    };
+  }
   const gatheringState = String(context?.iceGatheringState || "").toLowerCase();
   const stats = context?.iceStats || null;
   const remoteCandidatesTotal = Number(stats?.remoteCandidates?.total || 0);
