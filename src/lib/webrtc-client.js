@@ -1,6 +1,7 @@
 const DEFAULT_ICE_SERVERS = [
   {
     urls: [
+      "stun:stun.l.google.com:19302",
       "stun:stun1.l.google.com:19302",
       "stun:stun2.l.google.com:19302",
       "stun:stun3.l.google.com:19302",
@@ -27,9 +28,9 @@ export async function openDriveViaWebRtcInvite(
   const timing = {
     signalReadyTimeoutMs: Number(options?.timing?.signalReadyTimeoutMs || 2500),
     noAnswerTimeoutMs: Number(options?.timing?.noAnswerTimeoutMs || 12000),
-    handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 56000),
-    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 42000),
-    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 14000),
+    handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 38000),
+    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 28000),
+    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 10000),
     preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 900),
     restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 1200),
     punchLeadMs: Number(options?.timing?.punchLeadMs || 800),
@@ -71,7 +72,7 @@ export async function openDriveViaWebRtcInvite(
   let localIpv6GlobalHostCandidates = 0;
   let remoteIpv6GlobalHostCandidates = 0;
   let offerAttempts = 0;
-  const maxOfferAttempts = 1;
+  const maxOfferAttempts = 4;
   let offerInFlight = false;
   let lastOfferSentAt = 0;
   let remoteSignalError = "";
@@ -81,7 +82,7 @@ export async function openDriveViaWebRtcInvite(
   let hostIceState = "";
   let hostConnState = "";
   let iceRestartAttempts = 0;
-  const maxIceRestartAttempts = 0;
+  const maxIceRestartAttempts = 2;
   let remoteAddCandidateErrors = 0;
   let lastRemoteAddCandidateError = "";
   let activePunchAtMs = 0;
