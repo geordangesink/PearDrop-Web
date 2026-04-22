@@ -7,6 +7,7 @@ import {
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
 import {
+  buildDownloadPageUrl,
   buildWebClientInviteUrl,
   toInviteUrl,
   toNativeInviteUrl,
@@ -379,6 +380,14 @@ app.innerHTML = `
     <code id="relay-cmd">cd /Users/geordangesink/Documents/Projects/Pear Drops/web && npm run relay</code>
     <div><button id="copy-relay-cmd">Copy command</button></div>
   </div>
+  <div id="app-fallback" class="helper hidden">
+    <div><strong>Direct browser connection failed on this network.</strong></div>
+    <div>Try opening this invite in the desktop app for better NAT traversal behavior.</div>
+    <div style="display:flex; gap:10px; margin-top:8px;">
+      <button id="fallback-open-native">Open in App</button>
+      <button id="fallback-download-app" class="ghost">Download App</button>
+    </div>
+  </div>
   <div id="preview-modal" class="preview-modal hidden">
     <div id="preview-backdrop" class="preview-modal-backdrop"></div>
     <div class="preview-modal-card">
@@ -417,6 +426,9 @@ const joinBtn = document.getElementById("join");
 const joinCancelBtn = document.getElementById("join-cancel");
 const openNativeBtn = document.getElementById("open-native");
 const relayHelperEl = document.getElementById("relay-helper");
+const appFallbackEl = document.getElementById("app-fallback");
+const fallbackOpenNativeBtn = document.getElementById("fallback-open-native");
+const fallbackDownloadAppBtn = document.getElementById("fallback-download-app");
 const copyRelayCmdBtn = document.getElementById("copy-relay-cmd");
 const relayCmdEl = document.getElementById("relay-cmd");
 const previewModalEl = document.getElementById("preview-modal");
@@ -478,6 +490,22 @@ openNativeBtn.addEventListener("click", () => {
     return;
   }
   openAppWithFallback(nativeInvite);
+});
+fallbackOpenNativeBtn.addEventListener("click", () => {
+  const nativeInvite = toNativeInviteUrl(inviteEl.value);
+  if (!nativeInvite) {
+    statusEl.textContent = "Paste a valid invite URL first.";
+    return;
+  }
+  openAppWithFallback(nativeInvite);
+});
+fallbackDownloadAppBtn.addEventListener("click", () => {
+  const nativeInvite = toNativeInviteUrl(inviteEl.value);
+  location.href = buildDownloadPageUrl({
+    invite: nativeInvite || "",
+    source: "web-client-join-fallback",
+    auto: true,
+  });
 });
 copyRelayCmdBtn.addEventListener("click", async () => {
   const cmd = relayCmdEl.textContent || "";
@@ -569,6 +597,7 @@ async function joinInvite() {
   setJoinLoading(true);
   startJoinProgress("Initializing connection...");
   statusEl.textContent = "Connecting to relay and peer swarm...";
+  appFallbackEl.classList.add("hidden");
 
   try {
     setJoinProgress(6, "Resetting previous session...");
@@ -648,6 +677,9 @@ async function joinInvite() {
     if (token !== activeJoinToken) return;
     const message = error.message || String(error);
     statusEl.textContent = `Join failed: ${message}`;
+    if (shouldShowAppFallbackForJoinFailure(message)) {
+      appFallbackEl.classList.remove("hidden");
+    }
     if (message.includes("Relay connection failed")) {
       relayHelperEl.style.display = "block";
     }
@@ -657,6 +689,16 @@ async function joinInvite() {
       stopJoinProgress();
     }
   }
+}
+
+function shouldShowAppFallbackForJoinFailure(message) {
+  const text = String(message || "");
+  return (
+    text.includes("Host network does not allow automatic NAT mapping") ||
+    text.includes("Host ICE failed before data channel opened") ||
+    text.includes("Timed out waiting for ICE connect after peer answer") ||
+    text.includes("No reflexive ICE candidates available for direct cross-network route")
+  );
 }
 
 function setJoinLoading(loading) {

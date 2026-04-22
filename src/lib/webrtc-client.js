@@ -26,8 +26,8 @@ export async function openDriveViaWebRtcInvite(
     handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 120000),
     postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 120000),
     postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 20000),
-    preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 900),
-    restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 1200),
+    preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 1100),
+    restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 2000),
     punchLeadMs: Number(options?.timing?.punchLeadMs || 800),
   };
   if (!parsed.signalKey) throw new Error("Invite is missing signal key");
@@ -532,6 +532,12 @@ export async function openDriveViaWebRtcInvite(
         return "Timed out waiting for peer answer";
       }
       if (remoteSignalError) return remoteSignalError;
+      if (receivedAnswer && allHostMappingProtocolsFailed(hostNetStatus)) {
+        const answerAgeMs = answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
+        if (answerAgeMs > Math.max(7000, timing.postAnswerIdleTimeoutMs)) {
+          return "Host network does not allow automatic NAT mapping (PCP/NAT-PMP/UPnP all failed)";
+        }
+      }
       const hostIce = String(hostIceState || "").toLowerCase();
       const hostConn = String(hostConnState || "").toLowerCase();
       if (receivedAnswer && (hostIce === "failed" || hostConn === "failed")) {
@@ -1032,6 +1038,12 @@ function classifyDeterministicFailure(context) {
 
   const hostConnState = String(context?.hostConnState || "").toLowerCase();
   const hostIceState = String(context?.hostIceState || "").toLowerCase();
+  if (allHostMappingProtocolsFailed(context?.hostNetStatus)) {
+    return {
+      code: "HOST_MAPPING_PROTOCOLS_FAILED",
+      message: "Host network rejected PCP/NAT-PMP/UPnP mapping attempts",
+    };
+  }
   const hostIceStats = context?.hostIceStats || null;
   const hostRemoteCandidates = Number(hostIceStats?.remoteCandidates?.total || 0);
   const hostPairTotal = Number(hostIceStats?.candidatePairs?.total || 0);
@@ -1123,6 +1135,16 @@ function classifyExactFailurePoint(context) {
   const hostFlowReceived = Number(hostFlow?.received || 0);
   const hostFlowApplied = Number(hostFlow?.applied || 0);
   const hostFlowAddErrors = Number(hostFlow?.addErrors || 0);
+  if (allHostMappingProtocolsFailed(context?.hostNetStatus)) {
+    return {
+      stage: "host.nat-mapping-unavailable",
+      exact: true,
+      reason: "Host network rejected PCP/NAT-PMP/UPnP mapping attempts",
+      evidence: {
+        upnpStatus: context?.hostNetStatus?.upnp || null,
+      },
+    };
+  }
 
   if (!Boolean(context?.peerSignalReady) && !receivedAnswer) {
     return {
@@ -1305,6 +1327,28 @@ function classifyExactFailurePoint(context) {
       hostFlow,
     },
   };
+}
+
+function allHostMappingProtocolsFailed(hostNetStatus) {
+  const upnp = hostNetStatus?.upnp || null;
+  const protocols = upnp?.protocols || null;
+  if (!protocols) return false;
+  const pcp = protocols.pcp || null;
+  const natPmp = protocols.natPmp || null;
+  const upnpNative = protocols.upnp || null;
+  const upnpLegacy = protocols.upnpLegacy || null;
+  const hasAttempts =
+    Number(pcp?.attempts || 0) > 0 &&
+    Number(natPmp?.attempts || 0) > 0 &&
+    Number(upnpNative?.attempts || 0) > 0 &&
+    Number(upnpLegacy?.attempts || 0) > 0;
+  if (!hasAttempts) return false;
+  const allFailed =
+    Number(pcp?.succeeded || 0) === 0 &&
+    Number(natPmp?.succeeded || 0) === 0 &&
+    Number(upnpNative?.succeeded || 0) === 0 &&
+    Number(upnpLegacy?.succeeded || 0) === 0;
+  return allFailed;
 }
 
 function nextPunchAtMs({ now, suggestedPunchAtMs, punchLeadMs }) {
