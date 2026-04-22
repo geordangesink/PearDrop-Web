@@ -419,6 +419,7 @@ export async function openDriveViaWebRtcInvite(
     if (offerInFlight) return false;
     if (iceRestartAttempts >= maxIceRestartAttempts) return false;
     if (offerAttempts >= maxOfferAttempts) return false;
+    if (allHostMappingProtocolsFailed(hostNetStatus)) return false;
     if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) return false;
     const pairTotal = Number(latestIceStatsSummary?.candidatePairs?.total || 0);
     const pairInProgress = Number(latestIceStatsSummary?.candidatePairs?.inProgress || 0);
@@ -534,7 +535,18 @@ export async function openDriveViaWebRtcInvite(
       if (remoteSignalError) return remoteSignalError;
       if (receivedAnswer && allHostMappingProtocolsFailed(hostNetStatus)) {
         const answerAgeMs = answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
-        if (answerAgeMs > Math.max(7000, timing.postAnswerIdleTimeoutMs)) {
+        const localIce = String(pc.iceConnectionState || "").toLowerCase();
+        const localConn = String(pc.connectionState || "").toLowerCase();
+        const hostIce = String(hostIceState || "").toLowerCase();
+        const hostConn = String(hostConnState || "").toLowerCase();
+        const anySideFailed =
+          hostIce === "failed" ||
+          hostIce === "disconnected" ||
+          hostConn === "failed" ||
+          localIce === "failed" ||
+          localIce === "disconnected" ||
+          localConn === "failed";
+        if (anySideFailed || answerAgeMs > 5000) {
           return "Host network does not allow automatic NAT mapping (PCP/NAT-PMP/UPnP all failed)";
         }
       }
