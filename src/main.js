@@ -256,6 +256,34 @@ app.innerHTML = `
       background: #6d4d16;
       color: #fff8ea;
     }
+    .join-error {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #efc1cb;
+      background: #fff3f6;
+      color: #6e2a36;
+      display: none;
+    }
+    .join-error-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .copy-error-btn {
+      margin-top: 0;
+      background: #b8435b;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+    }
+    .native-error-btn {
+      margin-top: 10px;
+      width: 100%;
+    }
     .preview-modal {
       position: fixed;
       inset: 0;
@@ -388,6 +416,16 @@ app.innerHTML = `
       <button id="fallback-download-app" class="ghost">Download App</button>
     </div>
   </div>
+  <div id="join-error" class="join-error hidden">
+    <div id="join-error-brief">Connection failed.</div>
+    <div class="join-error-actions">
+      <button id="copy-join-error" class="copy-error-btn">
+        <span aria-hidden="true">📋</span>
+        <span>Copy Error</span>
+      </button>
+    </div>
+    <button id="join-error-open-native" class="ghost native-error-btn">View Drive in Native App</button>
+  </div>
   <div id="preview-modal" class="preview-modal hidden">
     <div id="preview-backdrop" class="preview-modal-backdrop"></div>
     <div class="preview-modal-card">
@@ -429,6 +467,10 @@ const relayHelperEl = document.getElementById("relay-helper");
 const appFallbackEl = document.getElementById("app-fallback");
 const fallbackOpenNativeBtn = document.getElementById("fallback-open-native");
 const fallbackDownloadAppBtn = document.getElementById("fallback-download-app");
+const joinErrorEl = document.getElementById("join-error");
+const joinErrorBriefEl = document.getElementById("join-error-brief");
+const copyJoinErrorBtn = document.getElementById("copy-join-error");
+const joinErrorOpenNativeBtn = document.getElementById("join-error-open-native");
 const copyRelayCmdBtn = document.getElementById("copy-relay-cmd");
 const relayCmdEl = document.getElementById("relay-cmd");
 const previewModalEl = document.getElementById("preview-modal");
@@ -456,6 +498,7 @@ let joinInFlight = false;
 let activeJoinToken = 0;
 let joinProgressTimer = null;
 let joinProgressValue = 0;
+let lastJoinErrorMessage = "";
 const JOIN_PHASES = Object.freeze({
   "parse-invite": { value: 8, label: "Parsing invite..." },
   "open-drive": { value: 14, label: "Preparing connection..." },
@@ -506,6 +549,24 @@ fallbackDownloadAppBtn.addEventListener("click", () => {
     source: "web-client-join-fallback",
     auto: true,
   });
+});
+copyJoinErrorBtn.addEventListener("click", async () => {
+  const full = String(lastJoinErrorMessage || "").trim();
+  if (!full) return;
+  try {
+    await navigator.clipboard.writeText(full);
+    statusEl.textContent = "Join error copied.";
+  } catch {
+    statusEl.textContent = "Could not copy join error automatically.";
+  }
+});
+joinErrorOpenNativeBtn.addEventListener("click", () => {
+  const nativeInvite = toNativeInviteUrl(inviteEl.value);
+  if (!nativeInvite) {
+    statusEl.textContent = "Paste a valid invite URL first.";
+    return;
+  }
+  openAppWithFallback(nativeInvite);
 });
 copyRelayCmdBtn.addEventListener("click", async () => {
   const cmd = relayCmdEl.textContent || "";
@@ -598,6 +659,7 @@ async function joinInvite() {
   startJoinProgress("Initializing connection...");
   statusEl.textContent = "Connecting to relay and peer swarm...";
   appFallbackEl.classList.add("hidden");
+  hideJoinErrorPanel();
 
   try {
     setJoinProgress(6, "Resetting previous session...");
@@ -673,10 +735,13 @@ async function joinInvite() {
     setJoinProgress(100, "Drive ready");
 
     statusEl.textContent = `Connected. ${manifest.files?.length || 0} file(s) available.`;
+    hideJoinErrorPanel();
   } catch (error) {
     if (token !== activeJoinToken) return;
     const message = error.message || String(error);
+    lastJoinErrorMessage = String(message || "");
     statusEl.textContent = `Join failed: ${message}`;
+    showJoinErrorPanel(message);
     if (shouldShowAppFallbackForJoinFailure(message)) {
       appFallbackEl.classList.remove("hidden");
     }
@@ -689,6 +754,34 @@ async function joinInvite() {
       stopJoinProgress();
     }
   }
+}
+
+function showJoinErrorPanel(message) {
+  joinErrorBriefEl.textContent = summarizeJoinError(message);
+  joinErrorEl.style.display = "block";
+  joinErrorEl.classList.remove("hidden");
+}
+
+function hideJoinErrorPanel() {
+  lastJoinErrorMessage = "";
+  joinErrorBriefEl.textContent = "Connection failed.";
+  joinErrorEl.style.display = "none";
+  joinErrorEl.classList.add("hidden");
+}
+
+function summarizeJoinError(message) {
+  const text = String(message || "");
+  if (!text) return "Connection failed. Copy the full error for details.";
+  if (text.includes("Host network does not allow automatic NAT mapping")) {
+    return "Direct browser connection is blocked by host network NAT settings.";
+  }
+  if (text.includes("Timed out waiting for host ready signal")) {
+    return "Host signaling was not ready in time.";
+  }
+  if (text.includes("Host ICE failed before data channel opened")) {
+    return "Direct peer channel failed during network negotiation.";
+  }
+  return "Connection failed. Copy the full error for details.";
 }
 
 function shouldShowAppFallbackForJoinFailure(message) {
