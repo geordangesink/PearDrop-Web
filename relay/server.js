@@ -28,8 +28,26 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 wss.on("connection", (socket) => {
+  const relayStream = new RelayStream(false, socket);
+
+  socket.on("error", (error) => {
+    console.warn("[relay] websocket peer error:", summarizeError(error));
+  });
+
   try {
-    relay(dht, new RelayStream(false, socket));
+    relay(dht, relayStream)
+      .then((node) => {
+        hardenDestroySend(node, socket);
+      })
+      .catch((error) => {
+        console.warn(
+          "[relay] relay handshake failed:",
+          summarizeError(error),
+        );
+        try {
+          socket.close();
+        } catch {}
+      });
   } catch (error) {
     console.warn(
       "[relay] failed to initialize relay connection:",
@@ -127,4 +145,62 @@ function summarizeError(errorLike) {
       ? String(errorLike.stack || "")
       : "";
   return `${message}${stack ? ` | ${stack}` : ""}`.trim();
+}
+
+function hardenDestroySend(node, socket) {
+  const destroyChannel = node?._protocol?.destroy;
+  if (!destroyChannel || typeof destroyChannel.send !== "function") return;
+  if (destroyChannel.__pearDropHardened) return;
+
+  const originalSend = destroyChannel.send.bind(destroyChannel);
+
+  destroyChannel.send = (message = {}) => {
+    let normalized = message;
+
+    // @hyperswarm/dht-relay can emit { alias, error } without paired/remoteAlias
+    // from server-proxy stream errors, which breaks compact-encoding uint32.
+    if (
+      normalized &&
+      normalized.paired !== true &&
+      Number.isInteger(normalized.alias) &&
+      !Number.isInteger(normalized.remoteAlias)
+    ) {
+      normalized = { ...normalized, paired: true };
+    }
+
+    if (
+      !normalized ||
+      (!Number.isInteger(normalized.alias) &&
+        !Number.isInteger(normalized.remoteAlias))
+    ) {
+      console.warn(
+        "[relay] dropping invalid destroy message:",
+        JSON.stringify(normalized ?? null),
+      );
+      return;
+    }
+
+    try {
+      originalSend(normalized);
+    } catch (error) {
+      if (summarizeError(error).toLowerCase().includes("uint must be positive")) {
+        console.warn(
+          "[relay] suppressed invalid destroy encode:",
+          summarizeError(error),
+        );
+        try {
+          socket.close();
+        } catch {}
+        return;
+      }
+      throw error;
+    }
+  };
+
+  Object.defineProperty(destroyChannel, "__pearDropHardened", {
+    value: true,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
 }
