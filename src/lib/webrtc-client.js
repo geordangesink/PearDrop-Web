@@ -537,7 +537,9 @@ export async function openDriveViaWebRtcInvite(
     if (offerInFlight) return false;
     if (iceRestartAttempts >= maxIceRestartAttempts) return false;
     if (offerAttempts >= maxOfferAttempts) return false;
-    if (allHostMappingProtocolsFailed(hostNetStatus)) return false;
+    if (!allowRelayCandidates && allHostMappingProtocolsFailed(hostNetStatus)) {
+      return false;
+    }
     if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) {
       return false;
     }
@@ -671,7 +673,11 @@ export async function openDriveViaWebRtcInvite(
           return "Timed out waiting for peer answer";
         }
         if (remoteSignalError) return remoteSignalError;
-        if (receivedAnswer && allHostMappingProtocolsFailed(hostNetStatus)) {
+        if (
+          !allowRelayCandidates &&
+          receivedAnswer &&
+          allHostMappingProtocolsFailed(hostNetStatus)
+        ) {
           const answerAgeMs =
             answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
           const localIce = String(pc.iceConnectionState || "").toLowerCase();
@@ -744,6 +750,7 @@ export async function openDriveViaWebRtcInvite(
           }
         }
         if (String(pc.iceGatheringState || "") !== "complete") return "";
+        if (allowRelayCandidates) return "";
         if (localDirect > 0 || remoteDirect > 0 || hasGlobalIpv6HostPath) {
           return "";
         }
@@ -755,6 +762,7 @@ export async function openDriveViaWebRtcInvite(
     const diagnostics = {
       iceStats: maybeIceSummary,
       deterministicFailure: classifyDeterministicFailure({
+        transportMode,
         receivedAnswer,
         hostIceState,
         hostConnState,
@@ -777,6 +785,7 @@ export async function openDriveViaWebRtcInvite(
         iceStats: maybeIceSummary,
       }),
       exactFailurePoint: classifyExactFailurePoint({
+        transportMode,
         offerAttempts,
         peerSignalReady,
         receivedAnswer,
@@ -1215,6 +1224,11 @@ function parseUfragFromCandidateLine(line) {
 }
 
 function classifyDeterministicFailure(context) {
+  const transportMode =
+    String(context?.transportMode || "direct").toLowerCase() === "turn"
+      ? "turn"
+      : "direct";
+  const allowRelayCandidates = transportMode === "turn";
   const remoteSignalError = String(context?.remoteSignalError || "");
   if (remoteSignalError) {
     return {
@@ -1225,7 +1239,10 @@ function classifyDeterministicFailure(context) {
 
   const hostConnState = String(context?.hostConnState || "").toLowerCase();
   const hostIceState = String(context?.hostIceState || "").toLowerCase();
-  if (allHostMappingProtocolsFailed(context?.hostNetStatus)) {
+  if (
+    !allowRelayCandidates &&
+    allHostMappingProtocolsFailed(context?.hostNetStatus)
+  ) {
     return {
       code: "HOST_MAPPING_PROTOCOLS_FAILED",
       message: "Host network rejected PCP/NAT-PMP/UPnP mapping attempts",
@@ -1305,6 +1322,11 @@ function classifyDeterministicFailure(context) {
 }
 
 function classifyExactFailurePoint(context) {
+  const transportMode =
+    String(context?.transportMode || "direct").toLowerCase() === "turn"
+      ? "turn"
+      : "direct";
+  const allowRelayCandidates = transportMode === "turn";
   const now = Date.now();
   const receivedAnswer = Boolean(context?.receivedAnswer);
   const signalingState = String(context?.signalingState || "").toLowerCase();
@@ -1343,7 +1365,10 @@ function classifyExactFailurePoint(context) {
   const hostFlowReceived = Number(hostFlow?.received || 0);
   const hostFlowApplied = Number(hostFlow?.applied || 0);
   const hostFlowAddErrors = Number(hostFlow?.addErrors || 0);
-  if (allHostMappingProtocolsFailed(context?.hostNetStatus)) {
+  if (
+    !allowRelayCandidates &&
+    allHostMappingProtocolsFailed(context?.hostNetStatus)
+  ) {
     return {
       stage: "host.nat-mapping-unavailable",
       exact: true,
