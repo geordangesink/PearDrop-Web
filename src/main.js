@@ -1667,6 +1667,11 @@ async function openDriveFromInvite(parsed, options = {}) {
       options,
     );
   }
+  if (transportMode === "turn" && !relayParsed?.webKey) {
+    throw new Error(
+      "Use server requires a relay web host key. Re-copy a fresh invite from an active host.",
+    );
+  }
 
   if (!parsed.signalKey && relayParsed?.webKey) {
     return openDriveViaRelayInvite(
