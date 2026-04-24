@@ -1,4 +1,4 @@
-import { relayUrlForInvite, formatBytes } from "./lib/invite.js";
+import { parseInvite, relayUrlForInvite, formatBytes } from "./lib/invite.js";
 import {
   loadManifestFromInvite,
   readInviteEntry,
@@ -1632,6 +1632,20 @@ function escapeHtml(value) {
 
 async function openDriveFromInvite(parsed, options = {}) {
   const relayUrl = relayUrlForInvite(parsed, location);
+  const transportMode =
+    String(options?.transportMode || "direct").toLowerCase() === "turn"
+      ? "turn"
+      : "direct";
+  let relayParsed = parsed;
+  let nestedParsed = null;
+  if (parsed?.nativeInvite) {
+    try {
+      nestedParsed = parseInvite(String(parsed.nativeInvite));
+    } catch {}
+  }
+  if (!relayParsed?.webKey && nestedParsed?.webKey) {
+    relayParsed = { ...parsed, webKey: nestedParsed.webKey };
+  }
   const [{ default: DHT }, { default: RelayStream }, { default: b4a }] =
     await Promise.all([
       import("@hyperswarm/dht-relay"),
@@ -1639,9 +1653,24 @@ async function openDriveFromInvite(parsed, options = {}) {
       import("b4a"),
     ]);
 
-  if (!parsed.signalKey && parsed.webKey) {
+  // "Use server" should force relay-drive transport (no P2P/NAT dependency)
+  // when a relay web host key is available (top-level or nested invite).
+  if (transportMode === "turn" && relayParsed?.webKey) {
     return openDriveViaRelayInvite(
-      parsed,
+      relayParsed,
+      relayUrl,
+      {
+        DHT,
+        RelayStream,
+        b4a,
+      },
+      options,
+    );
+  }
+
+  if (!parsed.signalKey && relayParsed?.webKey) {
+    return openDriveViaRelayInvite(
+      relayParsed,
       relayUrl,
       {
         DHT,
