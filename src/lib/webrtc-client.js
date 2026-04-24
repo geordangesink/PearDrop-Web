@@ -440,7 +440,6 @@ export async function openDriveViaWebRtcInvite(
 
   const createLocalOffer = async ({ restartIce = false } = {}) => {
     if (stopped) return;
-    if (!peerSignalReady) return;
     if (offerInFlight) return;
     offerInFlight = true;
     try {
