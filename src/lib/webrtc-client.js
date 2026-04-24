@@ -481,7 +481,6 @@ export async function openDriveViaWebRtcInvite(
 
   const sendCurrentOffer = () => {
     if (stopped) return;
-    if (!peerSignalReady) return;
     if (offerAttempts >= maxOfferAttempts) return;
     const current = String(pc?.localDescription?.sdp || "");
     if (!current) return;
@@ -504,7 +503,6 @@ export async function openDriveViaWebRtcInvite(
   const sendOffer = async ({ restartIce = false } = {}) => {
     await createLocalOffer({ restartIce });
     if (stopped) return;
-    if (!peerSignalReady) return;
     if (offerAttempts >= maxOfferAttempts) return;
     offerInFlight = true;
     try {
@@ -571,7 +569,6 @@ export async function openDriveViaWebRtcInvite(
   offerRetryTimer = setInterval(() => {
     if (stopped) return;
     if (channel.readyState === "open") return;
-    if (!peerSignalReady) return;
     const signalingState = String(pc?.signalingState || "");
     // Keep retrying the current offer while we're still waiting for an answer.
     // This applies before the first answer and after ICE-restart re-offers.
