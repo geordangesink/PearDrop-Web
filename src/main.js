@@ -191,9 +191,28 @@ app.innerHTML = `
       padding: 8px 12px;
       border-radius: 10px;
     }
+    .download-btn.is-loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: center;
+    }
+    .download-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 999px;
+      animation: joinspin 0.8s linear infinite;
+    }
     .row-muted {
       color: #8094a5;
       font-size: 13px;
+    }
+    .cell-name {
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     .hidden { display: none !important; }
     .download-progress {
@@ -365,6 +384,80 @@ app.innerHTML = `
       object-fit: contain;
       background: #fff;
     }
+    @media (max-width: 760px) {
+      main {
+        margin: 14px;
+        padding: 16px;
+        border-radius: 14px;
+      }
+      h1 {
+        font-size: 1.45rem;
+      }
+      .bulk-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+      }
+      .menu-wrap {
+        width: 100%;
+      }
+      .menu-btn {
+        width: 100%;
+      }
+      .menu {
+        left: 0;
+        right: 0;
+        min-width: 0;
+      }
+      .files-table {
+        border-collapse: separate;
+        border-spacing: 0 10px;
+      }
+      .files-table thead {
+        display: none;
+      }
+      .files-table tbody tr {
+        display: block;
+        background: #fbfdff;
+        border: 1px solid #dfe8f1;
+        border-radius: 12px;
+        padding: 8px 10px;
+      }
+      .files-table tbody td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-bottom: 0;
+        padding: 6px 2px;
+      }
+      .files-table tbody td::before {
+        content: attr(data-label);
+        color: #6d8396;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      .files-table tbody td.cell-preview,
+      .files-table tbody td.cell-actions {
+        display: block;
+      }
+      .files-table tbody td.cell-preview::before,
+      .files-table tbody td.cell-actions::before {
+        display: block;
+        margin-bottom: 6px;
+      }
+      .files-table tbody td.cell-check {
+        justify-content: flex-start;
+      }
+      .download-btn {
+        width: 100%;
+      }
+      .preview-btn {
+        width: 60px;
+        height: 60px;
+      }
+    }
   </style>
 
   <h1>PearDrop Web Client</h1>
@@ -509,6 +602,7 @@ const downloadSelectedIndividualBtn = document.getElementById(
 let currentSession = null;
 let currentEntries = [];
 let selectedEntryKeys = new Set();
+const activeDownloadEntryKeys = new Set();
 const previewCache = new Map();
 const thumbnailCache = new Map();
 const thumbnailLoading = new Set();
@@ -518,6 +612,7 @@ let activeJoinToken = 0;
 let joinProgressTimer = null;
 let joinProgressValue = 0;
 let lastJoinErrorMessage = "";
+let bulkDownloadInFlight = false;
 const JOIN_PHASES = Object.freeze({
   "parse-invite": { value: 8, label: "Parsing invite..." },
   "open-drive": { value: 14, label: "Preparing connection..." },
@@ -631,6 +726,7 @@ checkAllEl.addEventListener("change", () => {
   }
   renderFileRows(currentEntries);
 });
+syncBulkSelectionUi();
 filesEl.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
@@ -642,7 +738,10 @@ filesEl.addEventListener("click", (event) => {
     return;
   }
   const entry = currentEntries[index];
-  if (action === "download") void downloadEntry(entry);
+  if (action === "download") {
+    if (bulkDownloadInFlight) return;
+    void downloadEntry(entry, { entryKey: entryKey(entry, index) });
+  }
   if (action === "preview") void openPreview(entry);
   if (action === "toggle") {
     const key = entryKey(entry, index);
@@ -889,14 +988,15 @@ function renderFileRows(entries) {
     const entry = entries[i];
     const key = entryKey(entry, i);
     const checked = selectedEntryKeys.has(key) ? "checked" : "";
+    const downloading = activeDownloadEntryKeys.has(key);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><input type="checkbox" data-action="toggle" data-index="${i}" ${checked} /></td>
-      <td>${previewButtonHtml(entry, i)}</td>
-      <td>${escapeHtml(entry.name || `File ${i + 1}`)}</td>
-      <td class="row-muted">--</td>
-      <td class="row-muted">${formatBytes(Number(entry.byteLength || 0))}</td>
-      <td><button class="download-btn" data-action="download" data-index="${i}">Download ${escapeHtml(entry.name || `file-${i + 1}`)}</button></td>
+      <td class="cell-check" data-label="Select"><input type="checkbox" data-action="toggle" data-index="${i}" ${checked} ${bulkDownloadInFlight ? "disabled" : ""} /></td>
+      <td class="cell-preview" data-label="Preview">${previewButtonHtml(entry, i)}</td>
+      <td class="cell-name" data-label="Name">${escapeHtml(entry.name || `File ${i + 1}`)}</td>
+      <td class="row-muted cell-modified" data-label="Last modified">--</td>
+      <td class="row-muted cell-size" data-label="Size">${formatBytes(Number(entry.byteLength || 0))}</td>
+      <td class="cell-actions" data-label="Actions"><button class="download-btn${downloading ? " is-loading" : ""}" data-action="download" data-index="${i}" ${downloading || bulkDownloadInFlight ? "disabled" : ""}>${downloading ? '<span class="download-spinner" aria-hidden="true"></span>Downloading...' : "Download"}</button></td>
     `;
     filesEl.appendChild(tr);
   }
@@ -934,6 +1034,12 @@ async function downloadEntry(entry, options = {}) {
     typeof options.onProgress === "function" ? options.onProgress : null;
   const chunkSize = Number(options.chunkSize || 64 * 1024);
   if (!currentSession) throw new Error("No active session");
+  const lockKey = String(options.entryKey || "").trim();
+  if (lockKey) {
+    if (activeDownloadEntryKeys.has(lockKey)) return;
+    activeDownloadEntryKeys.add(lockKey);
+    renderFileRows(currentEntries);
+  }
   const entryBytes = Math.max(0, Number(entry?.byteLength || 0));
   const useByteProgress = entryBytes > 0;
   if (manageProgress) {
@@ -1014,6 +1120,10 @@ async function downloadEntry(entry, options = {}) {
       );
     }
   } finally {
+    if (lockKey) {
+      activeDownloadEntryKeys.delete(lockKey);
+      renderFileRows(currentEntries);
+    }
     if (manageProgress) hideDownloadProgress();
   }
 }
@@ -1024,6 +1134,9 @@ async function downloadSelectedIndividually() {
     statusEl.textContent = "Select one or more files first.";
     return;
   }
+  if (bulkDownloadInFlight) return;
+  bulkDownloadInFlight = true;
+  renderFileRows(currentEntries);
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Downloading ${picked.length} selected file(s)...`;
   const knownTotalBytes = picked.reduce(
@@ -1053,6 +1166,7 @@ async function downloadSelectedIndividually() {
       const baseAtStart = downloadedBytes;
       await downloadEntry(entry, {
         manageProgress: false,
+        entryKey: entryKey(entry, currentEntries.indexOf(entry)),
         onProgress(doneForFile) {
           downloadedBytes = baseAtStart + Number(doneForFile || 0);
           showDownloadProgress(
@@ -1077,6 +1191,8 @@ async function downloadSelectedIndividually() {
     }
     statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
   } finally {
+    bulkDownloadInFlight = false;
+    renderFileRows(currentEntries);
     hideDownloadProgress();
   }
 }
@@ -1087,7 +1203,10 @@ async function downloadSelectedAsTgz() {
     statusEl.textContent = "Select one or more files first.";
     return;
   }
+  if (bulkDownloadInFlight) return;
   if (!currentSession) throw new Error("No active session");
+  bulkDownloadInFlight = true;
+  renderFileRows(currentEntries);
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Packing ${picked.length} selected file(s) into .tgz...`;
 
@@ -1161,6 +1280,8 @@ async function downloadSelectedAsTgz() {
     triggerBrowserDownload(blob, fileName);
     statusEl.textContent = `Downloaded ${fileName}`;
   } finally {
+    bulkDownloadInFlight = false;
+    renderFileRows(currentEntries);
     hideDownloadProgress();
   }
 }
@@ -1277,6 +1398,14 @@ function syncBulkSelectionUi() {
   const selected = getSelectedEntries().length;
   bulkCountEl.textContent = `${selected} selected`;
   checkAllEl.checked = total > 0 && selected === total;
+  const disableBulk = bulkDownloadInFlight || selected === 0 || total === 0;
+  downloadSelectedBtn.disabled = disableBulk;
+  downloadSelectedBtn.classList.toggle("is-loading", bulkDownloadInFlight);
+  downloadSelectedBtn.textContent = bulkDownloadInFlight
+    ? "Preparing downloads..."
+    : "Download selected ▾";
+  downloadSelectedTgzBtn.disabled = disableBulk;
+  downloadSelectedIndividualBtn.disabled = disableBulk;
 }
 
 function entryKey(entry, index) {
