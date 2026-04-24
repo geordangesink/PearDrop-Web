@@ -128,6 +128,8 @@ export async function openDriveViaWebRtcInvite(
   let localCandidateFlushTimer = null;
   let handshakeStatsTimer = null;
   let latestIceStatsSummary = null;
+  let answerApplyInFlight = false;
+  let lastAppliedAnswerSdp = "";
   let stopped = false;
   let offerRetryTimer = null;
   let requestIceRestart = () => {};
@@ -270,7 +272,6 @@ export async function openDriveViaWebRtcInvite(
     }
 
     if (message.type === "answer" && message.sdp) {
-      if (String(pc.signalingState || "") !== "have-local-offer") return;
       const answerOfferId = Number(message.offerId || 0);
       if (
         answerOfferId > 0 &&
@@ -279,16 +280,34 @@ export async function openDriveViaWebRtcInvite(
       ) {
         return;
       }
+      const incomingAnswerSdp = sanitizeIceSdp(String(message.sdp || ""), {
+        allowRelayCandidates,
+      });
+      const signalingState = String(pc.signalingState || "");
+      if (signalingState !== "have-local-offer") {
+        if (
+          signalingState === "stable" &&
+          receivedAnswer &&
+          (incomingAnswerSdp === lastAppliedAnswerSdp ||
+            answerOfferId <= 0 ||
+            answerOfferId === latestAnsweredOfferId ||
+            answerOfferId === currentOfferId)
+        ) {
+          return;
+        }
+        return;
+      }
+      if (answerApplyInFlight) return;
+      answerApplyInFlight = true;
       try {
         await pc.setRemoteDescription({
           type: "answer",
-          sdp: sanitizeIceSdp(String(message.sdp || ""), {
-            allowRelayCandidates,
-          }),
+          sdp: incomingAnswerSdp,
         });
         remoteDescriptionSet = true;
         receivedAnswer = true;
         latestAnsweredOfferId = answerOfferId || currentOfferId;
+        lastAppliedAnswerSdp = incomingAnswerSdp;
         answerReceivedAt = Date.now();
         if (offerRetryTimer) {
           clearInterval(offerRetryTimer);
@@ -296,9 +315,29 @@ export async function openDriveViaWebRtcInvite(
         }
         await flushPendingCandidates();
       } catch (error) {
-        remoteSignalError = String(
+        const messageText = String(
           error?.message || error || "Failed to apply peer answer",
         );
+        const stateNow = String(pc.signalingState || "");
+        // Duplicate answers can arrive after we already reached stable.
+        // Treat this as benign and keep the connection attempt alive.
+        if (
+          stateNow === "stable" &&
+          (receivedAnswer ||
+            /called in wrong state:\s*stable/i.test(messageText) ||
+            /failed to set remote answer sdp: called in wrong state:\s*stable/i.test(
+              messageText,
+            ))
+        ) {
+          remoteDescriptionSet = true;
+          receivedAnswer = true;
+          latestAnsweredOfferId = answerOfferId || latestAnsweredOfferId;
+          lastAppliedAnswerSdp = incomingAnswerSdp;
+        } else {
+          remoteSignalError = messageText;
+        }
+      } finally {
+        answerApplyInFlight = false;
       }
       return;
     }
