@@ -28,7 +28,17 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 wss.on("connection", (socket) => {
-  relay(dht, new RelayStream(false, socket));
+  try {
+    relay(dht, new RelayStream(false, socket));
+  } catch (error) {
+    console.warn(
+      "[relay] failed to initialize relay connection:",
+      summarizeError(error),
+    );
+    try {
+      socket.close();
+    } catch {}
+  }
 });
 
 server.listen(port, host, () => {
@@ -71,3 +81,50 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
   void shutdown("SIGINT");
 });
+
+process.on("uncaughtException", (error) => {
+  if (isRecoverableRelayPeerError(error)) {
+    console.warn(
+      "[relay] recovered uncaught peer error:",
+      summarizeError(error),
+    );
+    return;
+  }
+  console.error("[relay] fatal uncaught exception:", error);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  if (isRecoverableRelayPeerError(reason)) {
+    console.warn(
+      "[relay] recovered unhandled peer rejection:",
+      summarizeError(reason),
+    );
+    return;
+  }
+  console.error("[relay] fatal unhandled rejection:", reason);
+  process.exit(1);
+});
+
+function isRecoverableRelayPeerError(errorLike) {
+  const text = summarizeError(errorLike).toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("uint must be positive") ||
+    text.includes("@hyperswarm/dht-relay") ||
+    text.includes("compact-encoding")
+  );
+}
+
+function summarizeError(errorLike) {
+  if (!errorLike) return "";
+  const message =
+    typeof errorLike === "object" && errorLike && "message" in errorLike
+      ? String(errorLike.message || "")
+      : String(errorLike);
+  const stack =
+    typeof errorLike === "object" && errorLike && "stack" in errorLike
+      ? String(errorLike.stack || "")
+      : "";
+  return `${message}${stack ? ` | ${stack}` : ""}`.trim();
+}

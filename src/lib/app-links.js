@@ -58,14 +58,18 @@ export function detectClientPlatform(uaInput = "") {
   const desktopArch = detectDesktopArch(ua);
 
   if (isIOS) return { id: "ios", label: "iOS", group: "mobile", arch: "" };
-  if (isAndroid)
+  if (isAndroid) {
     return { id: "android", label: "Android", group: "mobile", arch: "" };
-  if (isWindows)
+  }
+  if (isWindows) {
     return { id: "windows", label: "Windows", group: "desktop", arch: "" };
-  if (isMac)
+  }
+  if (isMac) {
     return { id: "mac", label: "macOS", group: "desktop", arch: desktopArch };
-  if (isLinux)
+  }
+  if (isLinux) {
     return { id: "linux", label: "Linux", group: "desktop", arch: desktopArch };
+  }
   return { id: "unknown", label: "Your device", group: "unknown", arch: "" };
 }
 
@@ -77,8 +81,9 @@ export function installerUrlForPlatform(platformId, platformInfo = null) {
   if (platformId === "ios") return APP_LINKS.ios;
   if (platformId === "android") return APP_LINKS.android;
   if (platformId === "windows") return APP_LINKS.windows;
-  if (platformId === "mac")
+  if (platformId === "mac") {
     return arch === "x64" ? APP_LINKS.macX64 : APP_LINKS.macArm64;
+  }
   if (platformId === "linux") {
     return arch === "arm64" ? APP_LINKS.linuxArm64 : APP_LINKS.linuxX64;
   }

@@ -66,7 +66,9 @@ if (!invite) {
 
 function openAppWithFallback(nativeInvite, webUrl) {
   if (!nativeInvite) {
-    if (hintEl) hintEl.textContent = "Native invite missing. Opening web client...";
+    if (hintEl) {
+      hintEl.textContent = "Native invite missing. Opening web client...";
+    }
     location.replace(webUrl);
     return;
   }

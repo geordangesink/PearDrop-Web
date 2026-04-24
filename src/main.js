@@ -6,6 +6,7 @@ import {
   safeClose,
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
+import { openDriveViaRelayInvite } from "./lib/relay-drive.js";
 import {
   buildDownloadPageUrl,
   buildWebClientInviteUrl,
@@ -421,8 +422,9 @@ app.innerHTML = `
     <div class="join-error-actions">
       <button id="copy-join-error" class="copy-error-btn">
         <span aria-hidden="true">📋</span>
-        <span>Copy Error</span>
+        <span>Copy Log</span>
       </button>
+      <button id="join-error-use-servers" class="ghost">Use servers</button>
     </div>
     <button id="join-error-open-native" class="ghost native-error-btn">View Drive in Native App</button>
   </div>
@@ -470,7 +472,12 @@ const fallbackDownloadAppBtn = document.getElementById("fallback-download-app");
 const joinErrorEl = document.getElementById("join-error");
 const joinErrorBriefEl = document.getElementById("join-error-brief");
 const copyJoinErrorBtn = document.getElementById("copy-join-error");
-const joinErrorOpenNativeBtn = document.getElementById("join-error-open-native");
+const joinErrorUseServersBtn = document.getElementById(
+  "join-error-use-servers",
+);
+const joinErrorOpenNativeBtn = document.getElementById(
+  "join-error-open-native",
+);
 const copyRelayCmdBtn = document.getElementById("copy-relay-cmd");
 const relayCmdEl = document.getElementById("relay-cmd");
 const previewModalEl = document.getElementById("preview-modal");
@@ -540,7 +547,7 @@ fallbackOpenNativeBtn.addEventListener("click", () => {
     statusEl.textContent = "Paste a valid invite URL first.";
     return;
   }
-  openAppWithFallback(nativeInvite);
+  openAppThenDownload(nativeInvite, "web-client-join-fallback");
 });
 fallbackDownloadAppBtn.addEventListener("click", () => {
   const nativeInvite = toNativeInviteUrl(inviteEl.value);
@@ -560,13 +567,16 @@ copyJoinErrorBtn.addEventListener("click", async () => {
     statusEl.textContent = "Could not copy join error automatically.";
   }
 });
+joinErrorUseServersBtn.addEventListener("click", () => {
+  void joinInvite({ transportMode: "turn" });
+});
 joinErrorOpenNativeBtn.addEventListener("click", () => {
   const nativeInvite = toNativeInviteUrl(inviteEl.value);
   if (!nativeInvite) {
     statusEl.textContent = "Paste a valid invite URL first.";
     return;
   }
-  openAppWithFallback(nativeInvite);
+  openAppThenDownload(nativeInvite, "web-client-join-error");
 });
 copyRelayCmdBtn.addEventListener("click", async () => {
   const cmd = relayCmdEl.textContent || "";
@@ -636,7 +646,11 @@ if (initialInvite) {
   void joinInvite();
 }
 
-async function joinInvite() {
+async function joinInvite(options = {}) {
+  const transportMode =
+    String(options?.transportMode || "direct").toLowerCase() === "turn"
+      ? "turn"
+      : "direct";
   if (joinInFlight) return;
   const token = ++activeJoinToken;
   const invite = normalizeInviteInput(inviteEl.value);
@@ -657,7 +671,10 @@ async function joinInvite() {
 
   setJoinLoading(true);
   startJoinProgress("Initializing connection...");
-  statusEl.textContent = "Connecting to relay and peer swarm...";
+  statusEl.textContent =
+    transportMode === "turn"
+      ? "Connecting using relay servers..."
+      : "Connecting to relay and peer swarm...";
   appFallbackEl.classList.add("hidden");
   hideJoinErrorPanel();
 
@@ -675,7 +692,10 @@ async function joinInvite() {
       if (!step) return;
       if (String(phase || "") === "offer-send") {
         offerSendCount += 1;
-        setJoinProgress(step.value, `Sending offer to peer (${offerSendCount})...`);
+        setJoinProgress(
+          step.value,
+          `Sending offer to peer (${offerSendCount})...`,
+        );
         return;
       }
       if (String(phase || "") === "peer-handshake") {
@@ -686,10 +706,14 @@ async function joinInvite() {
           const totalPairs = Math.max(0, Number(pairCounts.total || 0));
           const succeededPairs = Math.max(0, Number(pairCounts.succeeded || 0));
           const failedPairs = Math.max(0, Number(pairCounts.failed || 0));
-          const inProgressPairs = Math.max(0, Number(pairCounts.inProgress || 0));
+          const inProgressPairs = Math.max(
+            0,
+            Number(pairCounts.inProgress || 0),
+          );
           const weightedDone =
             succeededPairs + failedPairs + inProgressPairs * 0.45;
-          const ratio = totalPairs > 0 ? Math.min(1, weightedDone / totalPairs) : 0;
+          const ratio =
+            totalPairs > 0 ? Math.min(1, weightedDone / totalPairs) : 0;
           const handshakeProgress = Math.round(72 + ratio * 7);
 
           const listText = [
@@ -700,7 +724,10 @@ async function joinInvite() {
             `local ${Number(localCandidates?.total || 0)}`,
             `remote ${Number(remoteCandidates?.total || 0)}`,
           ].join(" | ");
-          setJoinProgress(handshakeProgress, `Waiting for peer handshake... ${listText}`);
+          setJoinProgress(
+            handshakeProgress,
+            `Waiting for peer handshake... ${listText}`,
+          );
           return;
         }
       }
@@ -713,6 +740,7 @@ async function joinInvite() {
         : async (parsed) => {
             return openDriveFromInvite(parsed, {
               onPhase: applyJoinPhase,
+              transportMode,
             });
           };
 
@@ -740,11 +768,11 @@ async function joinInvite() {
     if (token !== activeJoinToken) return;
     const message = error.message || String(error);
     lastJoinErrorMessage = String(message || "");
-    statusEl.textContent = `Join failed: ${message}`;
-    showJoinErrorPanel(message);
-    if (shouldShowAppFallbackForJoinFailure(message)) {
-      appFallbackEl.classList.remove("hidden");
-    }
+    statusEl.textContent =
+      transportMode === "turn"
+        ? "Join failed using relay servers."
+        : "Join failed. Direct browser connection could not be established.";
+    showJoinErrorPanel(message, { allowUseServers: transportMode !== "turn" });
     if (message.includes("Relay connection failed")) {
       relayHelperEl.style.display = "block";
     }
@@ -756,8 +784,10 @@ async function joinInvite() {
   }
 }
 
-function showJoinErrorPanel(message) {
+function showJoinErrorPanel(message, options = {}) {
   joinErrorBriefEl.textContent = summarizeJoinError(message);
+  const allowUseServers = Boolean(options?.allowUseServers);
+  joinErrorUseServersBtn.classList.toggle("hidden", !allowUseServers);
   joinErrorEl.style.display = "block";
   joinErrorEl.classList.remove("hidden");
 }
@@ -765,6 +795,7 @@ function showJoinErrorPanel(message) {
 function hideJoinErrorPanel() {
   lastJoinErrorMessage = "";
   joinErrorBriefEl.textContent = "Connection failed.";
+  joinErrorUseServersBtn.classList.add("hidden");
   joinErrorEl.style.display = "none";
   joinErrorEl.classList.add("hidden");
 }
@@ -782,16 +813,6 @@ function summarizeJoinError(message) {
     return "Direct peer channel failed during network negotiation.";
   }
   return "Connection failed. Copy the full error for details.";
-}
-
-function shouldShowAppFallbackForJoinFailure(message) {
-  const text = String(message || "");
-  return (
-    text.includes("Host network does not allow automatic NAT mapping") ||
-    text.includes("Host ICE failed before data channel opened") ||
-    text.includes("Timed out waiting for ICE connect after peer answer") ||
-    text.includes("No reflexive ICE candidates available for direct cross-network route")
-  );
 }
 
 function setJoinLoading(loading) {
@@ -1597,7 +1618,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;");
 }
 
-async function openDriveViaRelay(parsed) {
+async function openDriveFromInvite(parsed, options = {}) {
+  const relayUrl = relayUrlForInvite(parsed, location);
   const [{ default: DHT }, { default: RelayStream }, { default: b4a }] =
     await Promise.all([
       import("@hyperswarm/dht-relay"),
@@ -1605,71 +1627,23 @@ async function openDriveViaRelay(parsed) {
       import("b4a"),
     ]);
 
-  const relayUrl = relayUrlForInvite(parsed, location);
-  const socket = new WebSocket(relayUrl);
-  await onceOpen(socket);
-
-  const dht = new DHT(new RelayStream(true, socket));
-  const topicHex = parsed.topic || parsed.driveKey;
-  if (!topicHex) throw new Error("Invite is missing web swarm topic");
-
-  const topic = b4a.from(topicHex, "hex");
-  const preferredKey = parsed.webKey ? b4a.from(parsed.webKey, "hex") : null;
-  const peerKey = await lookupFirstPeer(dht, topic, 8000, preferredKey);
-  const stream = dht.connect(peerKey);
-  await onceStreamOpen(stream);
-  const peer = createPeerRequestClient(stream);
-
-  return {
-    drive: {
-      async get(drivePath) {
-        if (drivePath === "/manifest.json") {
-          const response = await peer.request({ type: "manifest" });
-          if (!response || typeof response.manifest !== "object") {
-            throw new Error("Peer did not return a valid manifest payload");
-          }
-          return b4a.from(JSON.stringify(response.manifest), "utf8");
-        }
-
-        const response = await peer.request({ type: "file", path: drivePath });
-        if (!response?.dataBase64) return null;
-        return b4a.from(response.dataBase64, "base64");
+  if (!parsed.signalKey && parsed.webKey) {
+    return openDriveViaRelayInvite(
+      parsed,
+      relayUrl,
+      {
+        DHT,
+        RelayStream,
+        b4a,
       },
-      async getChunk(drivePath, offset, length) {
-        const response = await peer.request({
-          type: "file-chunk",
-          path: drivePath,
-          offset: Number(offset || 0),
-          length: Number(length || 0),
-        });
-        if (!response?.dataBase64) return null;
-        return b4a.from(response.dataBase64, "base64");
-      },
-    },
-    async close() {
-      stream.destroy();
-      if (typeof dht.destroy === "function") await dht.destroy();
-      socket.close();
-    },
-  };
-}
-
-async function openDriveFromInvite(parsed, options = {}) {
-  if (!parsed.signalKey) {
-    // TODO: Consider reintroducing non-WebRTC fallback in a future release
-    // when we can guarantee equivalent privacy semantics end-to-end.
-    throw new Error(
-      "This web client requires a WebRTC-enabled invite (missing signal key).",
+      options,
     );
   }
-
-  const relayUrl = relayUrlForInvite(parsed, location);
-  const [{ default: DHT }, { default: RelayStream }, { default: b4a }] =
-    await Promise.all([
-      import("@hyperswarm/dht-relay"),
-      import("@hyperswarm/dht-relay/ws"),
-      import("b4a"),
-    ]);
+  if (!parsed.signalKey) {
+    throw new Error(
+      "Invite is missing WebRTC signal key and relay web host key.",
+    );
+  }
 
   return openDriveViaWebRtcInvite(
     parsed,
@@ -1681,138 +1655,6 @@ async function openDriveFromInvite(parsed, options = {}) {
     },
     options,
   );
-}
-
-function onceOpen(socket) {
-  if (socket.readyState === WebSocket.OPEN) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    socket.addEventListener("open", () => resolve(), { once: true });
-    socket.addEventListener(
-      "error",
-      () => {
-        const url = socket.url || "unknown relay url";
-        reject(
-          new Error(
-            `Relay connection failed (${url}). Start relay with \`npm run relay\` or use an invite with a reachable relay host (not localhost unless browser is on same machine).`,
-          ),
-        );
-      },
-      { once: true },
-    );
-  });
-}
-
-function onceStreamOpen(stream) {
-  if (stream.opened || stream.writable) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const onOpen = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = (error) => {
-      cleanup();
-      reject(error || new Error("Peer connection failed"));
-    };
-    const cleanup = () => {
-      stream.off?.("open", onOpen);
-      stream.off?.("error", onError);
-    };
-    stream.on?.("open", onOpen);
-    stream.on?.("error", onError);
-  });
-}
-
-function lookupFirstPeer(dht, topic, timeoutMs, preferredKey = null) {
-  return new Promise((resolve, reject) => {
-    const stream = dht.lookup(topic);
-    const timer = setTimeout(() => {
-      stream.destroy?.();
-      reject(new Error("Timed out finding a web peer on swarm topic"));
-    }, timeoutMs);
-
-    let fallbackPeer = null;
-    stream.on("data", (result) => {
-      const peers = result?.peers || [];
-      for (const peer of peers) {
-        if (!peer?.publicKey) continue;
-        fallbackPeer = fallbackPeer || peer.publicKey;
-        if (
-          preferredKey &&
-          peer.publicKey.length === preferredKey.length &&
-          peer.publicKey.every((value, index) => value === preferredKey[index])
-        ) {
-          clearTimeout(timer);
-          stream.destroy?.();
-          resolve(peer.publicKey);
-          return;
-        }
-      }
-    });
-
-    stream.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    stream.on("end", () => {
-      clearTimeout(timer);
-      if (fallbackPeer) {
-        resolve(fallbackPeer);
-        return;
-      }
-      reject(new Error("No peers announced for this web swarm topic"));
-    });
-  });
-}
-
-function createPeerRequestClient(stream) {
-  let nextId = 1;
-  let buffered = "";
-  const pending = new Map();
-  const decoder = new TextDecoder("utf8");
-
-  stream.on("data", (chunk) => {
-    buffered += decoder.decode(chunk, { stream: true });
-    let newline = buffered.indexOf("\n");
-    while (newline !== -1) {
-      const line = buffered.slice(0, newline).trim();
-      buffered = buffered.slice(newline + 1);
-      if (line) {
-        try {
-          const message = JSON.parse(line);
-          const waiter = pending.get(message.id);
-          if (waiter) {
-            pending.delete(message.id);
-            if (message.ok === false) {
-              waiter.reject(new Error(message.error || "Peer request failed"));
-            } else {
-              waiter.resolve(message);
-            }
-          }
-        } catch {
-          // Helps diagnose protocol mismatches when connected peer is not serving the expected API.
-          console.warn("Ignoring non-JSON peer message:", line.slice(0, 120));
-        }
-      }
-      newline = buffered.indexOf("\n");
-    }
-  });
-
-  stream.on("error", (error) => {
-    for (const waiter of pending.values()) waiter.reject(error);
-    pending.clear();
-  });
-
-  return {
-    request(payload) {
-      const id = nextId++;
-      const request = JSON.stringify({ id, ...payload }) + "\n";
-      stream.write(request);
-      return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
-      });
-    },
-  };
 }
 
 function normalizeInviteInput(value) {
@@ -1855,5 +1697,45 @@ function openAppWithFallback(nativeInvite) {
   } catch {
     finish();
     location.href = fallbackUrl;
+  }
+}
+
+function openAppThenDownload(nativeInvite, source = "web-client") {
+  const downloadUrl = buildDownloadPageUrl({
+    invite: nativeInvite,
+    source,
+    auto: true,
+  });
+
+  let done = false;
+  let timer = null;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    if (timer) clearTimeout(timer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("pagehide", onPageHide);
+  };
+
+  const onVisibilityChange = () => {
+    if (document.hidden) finish();
+  };
+  const onPageHide = () => finish();
+
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pagehide", onPageHide, { once: true });
+
+  timer = setTimeout(() => {
+    if (done) return;
+    finish();
+    location.href = downloadUrl;
+  }, 1500);
+
+  try {
+    location.href = nativeInvite;
+  } catch {
+    finish();
+    location.href = downloadUrl;
   }
 }
