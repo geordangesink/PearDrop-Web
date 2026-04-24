@@ -269,11 +269,23 @@ app.innerHTML = `
     .join-error-actions {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 8px;
     }
-    .copy-error-btn {
+    .join-error-actions button {
       margin-top: 0;
+      margin-left: 0;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 14px;
+    }
+    .join-error-actions .ghost {
+      margin-left: 0;
+    }
+    .copy-error-btn {
       background: #b8435b;
       color: #fff;
       display: inline-flex;

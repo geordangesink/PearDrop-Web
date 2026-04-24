@@ -11,6 +11,18 @@ const DEFAULT_ICE_SERVERS = [
   },
 ];
 
+const TURN_ICE_SERVERS = [
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80?transport=udp",
+      "turn:openrelay.metered.ca:80?transport=tcp",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
 export async function openDriveViaWebRtcInvite(
   parsed,
   relayUrl,
@@ -24,12 +36,26 @@ export async function openDriveViaWebRtcInvite(
     signalReadyTimeoutMs: Number(options?.timing?.signalReadyTimeoutMs || 2500),
     noAnswerTimeoutMs: Number(options?.timing?.noAnswerTimeoutMs || 12000),
     handshakeTimeoutMs: Number(options?.timing?.handshakeTimeoutMs || 120000),
-    postAnswerConnectTimeoutMs: Number(options?.timing?.postAnswerConnectTimeoutMs || 120000),
-    postAnswerIdleTimeoutMs: Number(options?.timing?.postAnswerIdleTimeoutMs || 20000),
-    preAnswerOfferRetryMs: Number(options?.timing?.preAnswerOfferRetryMs || 1100),
+    postAnswerConnectTimeoutMs: Number(
+      options?.timing?.postAnswerConnectTimeoutMs || 120000,
+    ),
+    postAnswerIdleTimeoutMs: Number(
+      options?.timing?.postAnswerIdleTimeoutMs || 20000,
+    ),
+    preAnswerOfferRetryMs: Number(
+      options?.timing?.preAnswerOfferRetryMs || 1100,
+    ),
     restartOfferMinGapMs: Number(options?.timing?.restartOfferMinGapMs || 2000),
     punchLeadMs: Number(options?.timing?.punchLeadMs || 800),
   };
+  const transportMode =
+    String(options?.transportMode || "direct").toLowerCase() === "turn"
+      ? "turn"
+      : "direct";
+  const allowRelayCandidates = transportMode === "turn";
+  const iceServers = allowRelayCandidates
+    ? TURN_ICE_SERVERS
+    : DEFAULT_ICE_SERVERS;
   if (!parsed.signalKey) throw new Error("Invite is missing signal key");
   if (!parsed.nativeInvite) {
     throw new Error("Invite is missing native invite context");
@@ -50,7 +76,8 @@ export async function openDriveViaWebRtcInvite(
 
   emitPhase("rtc-setup");
   const pc = new RTCPeerConnection({
-    iceServers: DEFAULT_ICE_SERVERS,
+    iceServers,
+    iceTransportPolicy: allowRelayCandidates ? "relay" : "all",
     iceCandidatePoolSize: 8,
   });
   const channel = pc.createDataChannel("peardrops");
@@ -62,8 +89,20 @@ export async function openDriveViaWebRtcInvite(
   let localCandidatesSent = 0;
   let remoteCandidatesApplied = 0;
   let remoteCandidatesDropped = 0;
-  const localCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
-  const remoteCandidateKinds = { host: 0, srflx: 0, prflx: 0, relay: 0, other: 0 };
+  const localCandidateKinds = {
+    host: 0,
+    srflx: 0,
+    prflx: 0,
+    relay: 0,
+    other: 0,
+  };
+  const remoteCandidateKinds = {
+    host: 0,
+    srflx: 0,
+    prflx: 0,
+    relay: 0,
+    other: 0,
+  };
   let localIpv6GlobalHostCandidates = 0;
   let remoteIpv6GlobalHostCandidates = 0;
   let offerAttempts = 0;
@@ -144,7 +183,9 @@ export async function openDriveViaWebRtcInvite(
       return true;
     }
     const candidateForAdd =
-      typeof RTCIceCandidate === "function" ? new RTCIceCandidate(candidate) : candidate;
+      typeof globalThis.RTCIceCandidate === "function"
+        ? new globalThis.RTCIceCandidate(candidate)
+        : candidate;
     await pc.addIceCandidate(candidateForAdd);
     return true;
   };
@@ -159,7 +200,9 @@ export async function openDriveViaWebRtcInvite(
       } catch (error) {
         if (candidate) {
           remoteAddCandidateErrors += 1;
-          lastRemoteAddCandidateError = String(error?.message || error || "addIceCandidate failed");
+          lastRemoteAddCandidateError = String(
+            error?.message || error || "addIceCandidate failed",
+          );
         }
       }
     }
@@ -174,13 +217,18 @@ export async function openDriveViaWebRtcInvite(
       return;
     }
     if (message.type === "error") {
-      remoteSignalError = String(message.error || message.message || "Remote signaling error");
+      remoteSignalError = String(
+        message.error || message.message || "Remote signaling error",
+      );
       return;
     }
     if (message.type === "host-ice-state") {
       hostIceState = String(message.state || "");
       const hostIce = String(hostIceState || "").toLowerCase();
-      if (receivedAnswer && (hostIce === "failed" || hostIce === "disconnected")) {
+      if (
+        receivedAnswer &&
+        (hostIce === "failed" || hostIce === "disconnected")
+      ) {
         requestIceRestart({ force: true });
       }
       return;
@@ -188,7 +236,10 @@ export async function openDriveViaWebRtcInvite(
     if (message.type === "host-conn-state") {
       hostConnState = String(message.state || "");
       const hostConn = String(hostConnState || "").toLowerCase();
-      if (receivedAnswer && (hostConn === "failed" || hostConn === "disconnected")) {
+      if (
+        receivedAnswer &&
+        (hostConn === "failed" || hostConn === "disconnected")
+      ) {
         requestIceRestart({ force: true });
       }
       return;
@@ -209,7 +260,11 @@ export async function openDriveViaWebRtcInvite(
       }
       latestOfferAckStage = String(message.stage || "");
       latestOfferAckAt = Date.now();
-      offerAckEvents.push({ at: latestOfferAckAt, offerId, stage: latestOfferAckStage });
+      offerAckEvents.push({
+        at: latestOfferAckAt,
+        offerId,
+        stage: latestOfferAckStage,
+      });
       if (offerAckEvents.length > 30) offerAckEvents.shift();
       return;
     }
@@ -217,11 +272,19 @@ export async function openDriveViaWebRtcInvite(
     if (message.type === "answer" && message.sdp) {
       if (String(pc.signalingState || "") !== "have-local-offer") return;
       const answerOfferId = Number(message.offerId || 0);
-      if (answerOfferId > 0 && currentOfferId > 0 && answerOfferId !== currentOfferId) return;
+      if (
+        answerOfferId > 0 &&
+        currentOfferId > 0 &&
+        answerOfferId !== currentOfferId
+      ) {
+        return;
+      }
       try {
         await pc.setRemoteDescription({
           type: "answer",
-          sdp: sanitizeIceSdp(String(message.sdp || "")),
+          sdp: sanitizeIceSdp(String(message.sdp || ""), {
+            allowRelayCandidates,
+          }),
         });
         remoteDescriptionSet = true;
         receivedAnswer = true;
@@ -233,7 +296,9 @@ export async function openDriveViaWebRtcInvite(
         }
         await flushPendingCandidates();
       } catch (error) {
-        remoteSignalError = String(error?.message || error || "Failed to apply peer answer");
+        remoteSignalError = String(
+          error?.message || error || "Failed to apply peer answer",
+        );
       }
       return;
     }
@@ -242,14 +307,20 @@ export async function openDriveViaWebRtcInvite(
       const normalized = normalizeCandidateForSignal(message.candidate);
       if (!normalized) return;
       const messageOfferId = Number(message.offerId || 0);
-      if (messageOfferId > 0 && currentOfferId > 0 && messageOfferId !== currentOfferId) {
+      if (
+        messageOfferId > 0 &&
+        currentOfferId > 0 &&
+        messageOfferId !== currentOfferId
+      ) {
         remoteCandidatesIgnoredByOfferId += 1;
         remoteCandidatesDropped += 1;
         return;
       }
       bumpCandidateKind(remoteCandidateKinds, normalized);
-      if (isGlobalIpv6HostCandidate(normalized)) remoteIpv6GlobalHostCandidates += 1;
-      if (isRelayIceCandidate(normalized)) {
+      if (isGlobalIpv6HostCandidate(normalized)) {
+        remoteIpv6GlobalHostCandidates += 1;
+      }
+      if (!allowRelayCandidates && isRelayIceCandidate(normalized)) {
         remoteCandidatesDropped += 1;
         return;
       }
@@ -267,7 +338,9 @@ export async function openDriveViaWebRtcInvite(
         remoteCandidatesApplied += 1;
       } catch (error) {
         remoteAddCandidateErrors += 1;
-        lastRemoteAddCandidateError = String(error?.message || error || "addIceCandidate failed");
+        lastRemoteAddCandidateError = String(
+          error?.message || error || "addIceCandidate failed",
+        );
       }
       return;
     }
@@ -289,8 +362,10 @@ export async function openDriveViaWebRtcInvite(
       const normalized = normalizeCandidateForSignal(event.candidate);
       if (!normalized) return;
       bumpCandidateKind(localCandidateKinds, normalized);
-      if (isGlobalIpv6HostCandidate(normalized)) localIpv6GlobalHostCandidates += 1;
-      if (isRelayIceCandidate(normalized)) return;
+      if (isGlobalIpv6HostCandidate(normalized)) {
+        localIpv6GlobalHostCandidates += 1;
+      }
+      if (!allowRelayCandidates && isRelayIceCandidate(normalized)) return;
       if (isMdnsIceCandidate(normalized)) return;
       localCandidatesSent += 1;
       lastLocalCandidateAt = Date.now();
@@ -356,7 +431,9 @@ export async function openDriveViaWebRtcInvite(
         },
       });
       emitPhase("offer-create");
-      const offer = await pc.createOffer(restartIce ? { iceRestart: true } : {});
+      const offer = await pc.createOffer(
+        restartIce ? { iceRestart: true } : {},
+      );
       await pc.setLocalDescription(offer);
       preparedOfferId += 1;
     } finally {
@@ -374,7 +451,7 @@ export async function openDriveViaWebRtcInvite(
       currentOfferId = preparedOfferId;
     }
     emitPhase("offer-send");
-    const sdp = sanitizeIceSdp(current);
+    const sdp = sanitizeIceSdp(current, { allowRelayCandidates });
     signal.send({
       type: "offer",
       sdp,
@@ -397,7 +474,9 @@ export async function openDriveViaWebRtcInvite(
         currentOfferId = preparedOfferId;
       }
       emitPhase("offer-send");
-      const sdp = sanitizeIceSdp(String(pc?.localDescription?.sdp || ""));
+      const sdp = sanitizeIceSdp(String(pc?.localDescription?.sdp || ""), {
+        allowRelayCandidates,
+      });
       signal.send({
         type: "offer",
         sdp,
@@ -420,13 +499,21 @@ export async function openDriveViaWebRtcInvite(
     if (iceRestartAttempts >= maxIceRestartAttempts) return false;
     if (offerAttempts >= maxOfferAttempts) return false;
     if (allHostMappingProtocolsFailed(hostNetStatus)) return false;
-    if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) return false;
+    if (Date.now() - lastOfferSentAt < timing.restartOfferMinGapMs) {
+      return false;
+    }
     const pairTotal = Number(latestIceStatsSummary?.candidatePairs?.total || 0);
-    const pairInProgress = Number(latestIceStatsSummary?.candidatePairs?.inProgress || 0);
-    const remoteTotal = Number(latestIceStatsSummary?.remoteCandidates?.total || 0);
+    const pairInProgress = Number(
+      latestIceStatsSummary?.candidatePairs?.inProgress || 0,
+    );
+    const remoteTotal = Number(
+      latestIceStatsSummary?.remoteCandidates?.total || 0,
+    );
     // If ICE is actively probing candidate pairs, avoid restart churn that can reset progress.
     // Allow forced restart when one side already reports failed/disconnected.
-    if (!force && pairTotal > 0 && pairInProgress > 0 && remoteTotal > 0) return false;
+    if (!force && pairTotal > 0 && pairInProgress > 0 && remoteTotal > 0) {
+      return false;
+    }
     iceRestartAttempts += 1;
     await sendOffer({ restartIce: true });
     return true;
@@ -486,109 +573,144 @@ export async function openDriveViaWebRtcInvite(
   }, 1000);
   const handshakeStartedAt = Date.now();
   try {
-    await waitForChannelOpen(channel, pc, timing.handshakeTimeoutMs, () => ({
-      offerAttempts,
-      peerSignalReady,
-      receivedAnswer,
-      localCandidatesSent,
-      remoteCandidatesApplied,
-      remoteCandidatesDropped,
-      localCandidateKinds,
-      remoteCandidateKinds,
-      pendingRemoteCandidates: pendingRemoteCandidates.length,
-      signalingState: String(pc.signalingState || ""),
-      iceGatheringState: String(pc.iceGatheringState || ""),
-      iceConnectionState: String(pc.iceConnectionState || ""),
-      connectionState: String(pc.connectionState || ""),
-      remoteSignalError,
-      hostIceState,
-      hostConnState,
-      hostNetStatus,
-      hostIceStats,
-      localIpv6GlobalHostCandidates,
-      remoteIpv6GlobalHostCandidates,
-      remoteAddCandidateErrors,
-      lastRemoteAddCandidateError,
-      remoteCandidatesIgnoredByOfferId,
-      activePunchAtMs,
-      preparedOfferId,
-      currentOfferId,
-      lastSentOfferId,
-      latestAnsweredOfferId,
-      latestAckedOfferId,
-      latestOfferAckStage,
-      latestOfferAckAt,
-      hostIceStatsAt,
-      offerAckEvents,
-      answerReceivedAt,
-      answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
-      lastLocalCandidateAt,
-      lastRemoteCandidateAt,
-      localCandidateIdleMs: lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : 0,
-      remoteCandidateIdleMs: lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : 0,
-      iceRestartAttempts,
-    }), () => {
-      if (!receivedAnswer && Date.now() - handshakeStartedAt > timing.noAnswerTimeoutMs) {
-        if (!peerSignalReady) return "Timed out waiting for host ready signal";
-        return "Timed out waiting for peer answer";
-      }
-      if (remoteSignalError) return remoteSignalError;
-      if (receivedAnswer && allHostMappingProtocolsFailed(hostNetStatus)) {
-        const answerAgeMs = answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
-        const localIce = String(pc.iceConnectionState || "").toLowerCase();
-        const localConn = String(pc.connectionState || "").toLowerCase();
+    await waitForChannelOpen(
+      channel,
+      pc,
+      timing.handshakeTimeoutMs,
+      () => ({
+        offerAttempts,
+        peerSignalReady,
+        receivedAnswer,
+        localCandidatesSent,
+        remoteCandidatesApplied,
+        remoteCandidatesDropped,
+        localCandidateKinds,
+        remoteCandidateKinds,
+        pendingRemoteCandidates: pendingRemoteCandidates.length,
+        signalingState: String(pc.signalingState || ""),
+        iceGatheringState: String(pc.iceGatheringState || ""),
+        iceConnectionState: String(pc.iceConnectionState || ""),
+        connectionState: String(pc.connectionState || ""),
+        remoteSignalError,
+        hostIceState,
+        hostConnState,
+        hostNetStatus,
+        hostIceStats,
+        localIpv6GlobalHostCandidates,
+        remoteIpv6GlobalHostCandidates,
+        remoteAddCandidateErrors,
+        lastRemoteAddCandidateError,
+        remoteCandidatesIgnoredByOfferId,
+        activePunchAtMs,
+        preparedOfferId,
+        currentOfferId,
+        lastSentOfferId,
+        latestAnsweredOfferId,
+        latestAckedOfferId,
+        latestOfferAckStage,
+        latestOfferAckAt,
+        hostIceStatsAt,
+        offerAckEvents,
+        answerReceivedAt,
+        answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
+        lastLocalCandidateAt,
+        lastRemoteCandidateAt,
+        localCandidateIdleMs:
+          lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : 0,
+        remoteCandidateIdleMs:
+          lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : 0,
+        iceRestartAttempts,
+      }),
+      () => {
+        if (
+          !receivedAnswer &&
+          Date.now() - handshakeStartedAt > timing.noAnswerTimeoutMs
+        ) {
+          if (!peerSignalReady) {
+            return "Timed out waiting for host ready signal";
+          }
+          return "Timed out waiting for peer answer";
+        }
+        if (remoteSignalError) return remoteSignalError;
+        if (receivedAnswer && allHostMappingProtocolsFailed(hostNetStatus)) {
+          const answerAgeMs =
+            answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
+          const localIce = String(pc.iceConnectionState || "").toLowerCase();
+          const localConn = String(pc.connectionState || "").toLowerCase();
+          const hostIce = String(hostIceState || "").toLowerCase();
+          const hostConn = String(hostConnState || "").toLowerCase();
+          const anySideFailed =
+            hostIce === "failed" ||
+            hostIce === "disconnected" ||
+            hostConn === "failed" ||
+            localIce === "failed" ||
+            localIce === "disconnected" ||
+            localConn === "failed";
+          if (anySideFailed || answerAgeMs > 5000) {
+            return "Host network does not allow automatic NAT mapping (PCP/NAT-PMP/UPnP all failed)";
+          }
+        }
         const hostIce = String(hostIceState || "").toLowerCase();
         const hostConn = String(hostConnState || "").toLowerCase();
-        const anySideFailed =
-          hostIce === "failed" ||
-          hostIce === "disconnected" ||
-          hostConn === "failed" ||
-          localIce === "failed" ||
-          localIce === "disconnected" ||
-          localConn === "failed";
-        if (anySideFailed || answerAgeMs > 5000) {
-          return "Host network does not allow automatic NAT mapping (PCP/NAT-PMP/UPnP all failed)";
+        if (receivedAnswer && (hostIce === "failed" || hostConn === "failed")) {
+          if (iceRestartAttempts < maxIceRestartAttempts) {
+            void tryIceRestart({ force: true });
+            return "";
+          }
+          const answerAgeMs =
+            answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
+          if (answerAgeMs < Math.max(6000, timing.postAnswerIdleTimeoutMs)) {
+            return "";
+          }
+          return "Host ICE failed before data channel opened";
         }
-      }
-      const hostIce = String(hostIceState || "").toLowerCase();
-      const hostConn = String(hostConnState || "").toLowerCase();
-      if (receivedAnswer && (hostIce === "failed" || hostConn === "failed")) {
-        if (iceRestartAttempts < maxIceRestartAttempts) {
-          void tryIceRestart({ force: true });
+        const localDirect =
+          Number(localCandidateKinds.srflx || 0) +
+          Number(localCandidateKinds.prflx || 0);
+        const remoteDirect =
+          Number(remoteCandidateKinds.srflx || 0) +
+          Number(remoteCandidateKinds.prflx || 0);
+        const hasGlobalIpv6HostPath =
+          localIpv6GlobalHostCandidates > 0 ||
+          remoteIpv6GlobalHostCandidates > 0;
+        if (!receivedAnswer) return "";
+        const answerAgeMs = Date.now() - answerReceivedAt;
+        if (answerAgeMs > timing.postAnswerConnectTimeoutMs) {
+          const gatheringState = String(pc.iceGatheringState || "");
+          const localIdleMs =
+            lastLocalCandidateAt > 0
+              ? Date.now() - lastLocalCandidateAt
+              : Infinity;
+          const remoteIdleMs =
+            lastRemoteCandidateAt > 0
+              ? Date.now() - lastRemoteCandidateAt
+              : Infinity;
+          const maxIdleMs = Math.max(localIdleMs, remoteIdleMs);
+          const iceState = String(pc.iceConnectionState || "");
+          const connState = String(pc.connectionState || "");
+          if (
+            (iceState === "failed" ||
+              connState === "failed" ||
+              maxIdleMs > timing.postAnswerIdleTimeoutMs) &&
+            iceRestartAttempts < maxIceRestartAttempts
+          ) {
+            void tryIceRestart();
+            return "";
+          }
+          if (
+            gatheringState === "complete" ||
+            maxIdleMs > timing.postAnswerIdleTimeoutMs
+          ) {
+            return "Timed out waiting for ICE connect after peer answer";
+          }
+        }
+        if (String(pc.iceGatheringState || "") !== "complete") return "";
+        if (localDirect > 0 || remoteDirect > 0 || hasGlobalIpv6HostPath) {
           return "";
         }
-        const answerAgeMs = answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0;
-        if (answerAgeMs < Math.max(6000, timing.postAnswerIdleTimeoutMs)) return "";
-        return "Host ICE failed before data channel opened";
-      }
-      const localDirect = Number(localCandidateKinds.srflx || 0) + Number(localCandidateKinds.prflx || 0);
-      const remoteDirect = Number(remoteCandidateKinds.srflx || 0) + Number(remoteCandidateKinds.prflx || 0);
-      const hasGlobalIpv6HostPath =
-        localIpv6GlobalHostCandidates > 0 || remoteIpv6GlobalHostCandidates > 0;
-      if (!receivedAnswer) return "";
-      const answerAgeMs = Date.now() - answerReceivedAt;
-      if (answerAgeMs > timing.postAnswerConnectTimeoutMs) {
-        const gatheringState = String(pc.iceGatheringState || "");
-        const localIdleMs = lastLocalCandidateAt > 0 ? Date.now() - lastLocalCandidateAt : Infinity;
-        const remoteIdleMs = lastRemoteCandidateAt > 0 ? Date.now() - lastRemoteCandidateAt : Infinity;
-        const maxIdleMs = Math.max(localIdleMs, remoteIdleMs);
-        const iceState = String(pc.iceConnectionState || "");
-        const connState = String(pc.connectionState || "");
-        if (
-          (iceState === "failed" || connState === "failed" || maxIdleMs > timing.postAnswerIdleTimeoutMs) &&
-          iceRestartAttempts < maxIceRestartAttempts
-        ) {
-          void tryIceRestart();
-          return "";
-        }
-        if (gatheringState === "complete" || maxIdleMs > timing.postAnswerIdleTimeoutMs) {
-          return "Timed out waiting for ICE connect after peer answer";
-        }
-      }
-      if (String(pc.iceGatheringState || "") !== "complete") return "";
-      if (localDirect > 0 || remoteDirect > 0 || hasGlobalIpv6HostPath) return "";
-      return "No reflexive ICE candidates available for direct cross-network route";
-    });
+        return "No reflexive ICE candidates available for direct cross-network route";
+      },
+    );
   } catch (error) {
     const maybeIceSummary = await collectIceStatsSummary(pc).catch(() => null);
     const diagnostics = {
@@ -607,7 +729,8 @@ export async function openDriveViaWebRtcInvite(
         latestAnsweredOfferId,
         latestAckedOfferId,
         latestOfferAckStage,
-        latestOfferAckAgeMs: latestOfferAckAt > 0 ? Date.now() - latestOfferAckAt : 0,
+        latestOfferAckAgeMs:
+          latestOfferAckAt > 0 ? Date.now() - latestOfferAckAt : 0,
         hostIceStatsAgeMs: hostIceStatsAt > 0 ? Date.now() - hostIceStatsAt : 0,
         answerAgeMs: answerReceivedAt > 0 ? Date.now() - answerReceivedAt : 0,
         postAnswerConnectTimeoutMs: timing.postAnswerConnectTimeoutMs,
@@ -640,7 +763,10 @@ export async function openDriveViaWebRtcInvite(
       }),
     };
     await stopRtc();
-    if (maybeIceSummary && String(error?.message || "").includes("WebRTC channel")) {
+    if (
+      maybeIceSummary &&
+      String(error?.message || "").includes("WebRTC channel")
+    ) {
       throw new Error(
         `${String(error.message || error)} ${JSON.stringify(diagnostics)}`,
       );
@@ -794,7 +920,13 @@ function onceStreamOpen(stream) {
   });
 }
 
-function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null, getEarlyAbortReason = null) {
+function waitForChannelOpen(
+  channel,
+  pc,
+  timeoutMs,
+  getDiagnostics = null,
+  getEarlyAbortReason = null,
+) {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
     const onPcState = () => {
@@ -815,31 +947,26 @@ function waitForChannelOpen(channel, pc, timeoutMs, getDiagnostics = null, getEa
     };
     const abortTimer = setInterval(() => {
       const reason =
-        typeof getEarlyAbortReason === "function" ? String(getEarlyAbortReason() || "") : "";
+        typeof getEarlyAbortReason === "function"
+          ? String(getEarlyAbortReason() || "")
+          : "";
       if (!reason) return;
       cleanup();
       const diagnostics =
         typeof getDiagnostics === "function" ? getDiagnostics() : null;
-      const details = diagnostics
-        ? ` ${JSON.stringify(diagnostics)}`
-        : "";
+      const details = diagnostics ? ` ${JSON.stringify(diagnostics)}` : "";
       reject(new Error(`${reason}.${details}`));
     }, 700);
 
-    const timer = setTimeout(
-      () => {
-        cleanup();
-        const diagnostics =
-          typeof getDiagnostics === "function" ? getDiagnostics() : null;
-        const details = diagnostics
-          ? ` ${JSON.stringify(diagnostics)}`
-          : "";
-        reject(
-          new Error(`Timed out waiting for direct WebRTC channel.${details}`),
-        );
-      },
-      timeoutMs,
-    );
+    const timer = setTimeout(() => {
+      cleanup();
+      const diagnostics =
+        typeof getDiagnostics === "function" ? getDiagnostics() : null;
+      const details = diagnostics ? ` ${JSON.stringify(diagnostics)}` : "";
+      reject(
+        new Error(`Timed out waiting for direct WebRTC channel.${details}`),
+      );
+    }, timeoutMs);
     channel.onopen = () => {
       cleanup();
       resolve();
@@ -877,7 +1004,9 @@ function isGlobalIpv6HostCandidate(candidateLike) {
       ? candidateLike
       : String(candidateLike?.candidate || "");
   if (!/\btyp\s+host\b/i.test(line)) return false;
-  const match = line.match(/\bcandidate:[^\s]+\s+\d+\s+udp\s+\d+\s+([^\s]+)\s+\d+\s+typ\s+host\b/i);
+  const match = line.match(
+    /\bcandidate:[^\s]+\s+\d+\s+udp\s+\d+\s+([^\s]+)\s+\d+\s+typ\s+host\b/i,
+  );
   if (!match) return false;
   const address = String(match[1] || "").trim();
   if (!address || !address.includes(":")) return false;
@@ -926,7 +1055,8 @@ function isMdnsIceCandidate(candidateLike) {
   return /\b[a-z0-9-]+\.local\b/i.test(candidateLine);
 }
 
-function sanitizeIceSdp(sdpText) {
+function sanitizeIceSdp(sdpText, options = {}) {
+  const allowRelayCandidates = Boolean(options?.allowRelayCandidates);
   const raw = String(sdpText || "");
   if (!raw) return raw;
   const lines = raw.split(/\r?\n/);
@@ -938,7 +1068,7 @@ function sanitizeIceSdp(sdpText) {
       continue;
     }
     if (value.startsWith("a=candidate:")) {
-      if (isRelayIceCandidate(value)) continue;
+      if (!allowRelayCandidates && isRelayIceCandidate(value)) continue;
       if (isMdnsIceCandidate(value)) continue;
     }
     out.push(value);
@@ -998,13 +1128,15 @@ async function collectIceStatsSummary(pc) {
     if (stat.type === "local-candidate") {
       summary.localCandidates.total += 1;
       const kind = String(stat.candidateType || "other");
-      summary.localCandidates.byType[kind] = Number(summary.localCandidates.byType[kind] || 0) + 1;
+      summary.localCandidates.byType[kind] =
+        Number(summary.localCandidates.byType[kind] || 0) + 1;
       continue;
     }
     if (stat.type === "remote-candidate") {
       summary.remoteCandidates.total += 1;
       const kind = String(stat.candidateType || "other");
-      summary.remoteCandidates.byType[kind] = Number(summary.remoteCandidates.byType[kind] || 0) + 1;
+      summary.remoteCandidates.byType[kind] =
+        Number(summary.remoteCandidates.byType[kind] || 0) + 1;
     }
   }
   return summary;
@@ -1012,13 +1144,17 @@ async function collectIceStatsSummary(pc) {
 
 function normalizeCandidateForSignal(candidateLike) {
   const source =
-    candidateLike && typeof candidateLike === "object" && typeof candidateLike.toJSON === "function"
+    candidateLike &&
+    typeof candidateLike === "object" &&
+    typeof candidateLike.toJSON === "function"
       ? candidateLike.toJSON()
       : candidateLike;
   const candidate = String(source?.candidate || "");
   if (!candidate) return null;
   const sdpMid =
-    source?.sdpMid === null || typeof source?.sdpMid === "string" ? source.sdpMid : null;
+    source?.sdpMid === null || typeof source?.sdpMid === "string"
+      ? source.sdpMid
+      : null;
   const sdpMLineIndex = Number.isInteger(source?.sdpMLineIndex)
     ? Number(source.sdpMLineIndex)
     : 0;
@@ -1057,18 +1193,22 @@ function classifyDeterministicFailure(context) {
     };
   }
   const hostIceStats = context?.hostIceStats || null;
-  const hostRemoteCandidates = Number(hostIceStats?.remoteCandidates?.total || 0);
+  const hostRemoteCandidates = Number(
+    hostIceStats?.remoteCandidates?.total || 0,
+  );
   const hostPairTotal = Number(hostIceStats?.candidatePairs?.total || 0);
   if (hostConnState === "failed" || hostIceState === "failed") {
     if (hostPairTotal === 0 && hostRemoteCandidates === 0) {
       return {
         code: "HOST_NEVER_REGISTERED_REMOTE_CANDIDATES",
-        message: "Host ICE transport never registered browser remote candidates",
+        message:
+          "Host ICE transport never registered browser remote candidates",
       };
     }
     return {
       code: "HOST_ICE_FAILED",
-      message: "Host peer connection entered failed state before data channel opened",
+      message:
+        "Host peer connection entered failed state before data channel opened",
     };
   }
 
@@ -1091,10 +1231,16 @@ function classifyDeterministicFailure(context) {
   const gatheringState = String(context?.iceGatheringState || "").toLowerCase();
   const stats = context?.iceStats || null;
   const remoteCandidatesTotal = Number(stats?.remoteCandidates?.total || 0);
-  if (receivedAnswer && gatheringState === "complete" && stats && remoteCandidatesTotal === 0) {
+  if (
+    receivedAnswer &&
+    gatheringState === "complete" &&
+    stats &&
+    remoteCandidatesTotal === 0
+  ) {
     return {
       code: "NO_REMOTE_ICE_CANDIDATES",
-      message: "No remote ICE candidates were registered by browser ICE transport",
+      message:
+        "No remote ICE candidates were registered by browser ICE transport",
     };
   }
 
@@ -1134,15 +1280,26 @@ function classifyExactFailurePoint(context) {
   const browserStats = context?.iceStats || null;
   const hostIceStats = context?.hostIceStats || null;
   const hostFlow = context?.hostNetStatus?.remoteCandidateFlow || null;
-  const hostActiveFlow = context?.hostNetStatus?.activeOfferCandidateFlow || null;
-  const browserRemoteCandidates = Number(browserStats?.remoteCandidates?.total || 0);
-  const remoteCandidatesIgnoredByOfferId = Number(context?.remoteCandidatesIgnoredByOfferId || 0);
+  const hostActiveFlow =
+    context?.hostNetStatus?.activeOfferCandidateFlow || null;
+  const browserRemoteCandidates = Number(
+    browserStats?.remoteCandidates?.total || 0,
+  );
+  const remoteCandidatesIgnoredByOfferId = Number(
+    context?.remoteCandidatesIgnoredByOfferId || 0,
+  );
   const browserPairsTotal = Number(browserStats?.candidatePairs?.total || 0);
-  const browserPairsInProgress = Number(browserStats?.candidatePairs?.inProgress || 0);
+  const browserPairsInProgress = Number(
+    browserStats?.candidatePairs?.inProgress || 0,
+  );
   const browserHasSelectedPair = Boolean(browserStats?.selectedPair);
-  const hostRemoteCandidates = Number(hostIceStats?.remoteCandidates?.total || 0);
+  const hostRemoteCandidates = Number(
+    hostIceStats?.remoteCandidates?.total || 0,
+  );
   const hostPairsTotal = Number(hostIceStats?.candidatePairs?.total || 0);
-  const hostPairsInProgress = Number(hostIceStats?.candidatePairs?.inProgress || 0);
+  const hostPairsInProgress = Number(
+    hostIceStats?.candidatePairs?.inProgress || 0,
+  );
   const hostHasSelectedPair = Boolean(hostIceStats?.selectedPair);
   const hostFlowReceived = Number(hostFlow?.received || 0);
   const hostFlowApplied = Number(hostFlow?.applied || 0);
@@ -1158,7 +1315,7 @@ function classifyExactFailurePoint(context) {
     };
   }
 
-  if (!Boolean(context?.peerSignalReady) && !receivedAnswer) {
+  if (!context?.peerSignalReady && !receivedAnswer) {
     return {
       stage: "signaling.host-ready",
       exact: true,
@@ -1184,12 +1341,16 @@ function classifyExactFailurePoint(context) {
     };
   }
 
-  if (signalingState === "have-local-offer" && latestAnsweredOfferId < currentOfferId) {
+  if (
+    signalingState === "have-local-offer" &&
+    latestAnsweredOfferId < currentOfferId
+  ) {
     if (lastSentOfferId < currentOfferId || currentOfferId < preparedOfferId) {
       return {
         stage: "client.offer-send",
         exact: true,
-        reason: "Latest local offer generation was prepared but not confirmed as sent",
+        reason:
+          "Latest local offer generation was prepared but not confirmed as sent",
         evidence: {
           preparedOfferId,
           currentOfferId,
@@ -1217,7 +1378,8 @@ function classifyExactFailurePoint(context) {
     return {
       stage: "candidate.generation-mismatch",
       exact: true,
-      reason: "Browser dropped remote ICE candidates from non-active offer generation",
+      reason:
+        "Browser dropped remote ICE candidates from non-active offer generation",
       evidence: {
         remoteCandidatesIgnoredByOfferId,
         currentOfferId,
@@ -1253,11 +1415,17 @@ function classifyExactFailurePoint(context) {
     };
   }
 
-  if (hostFlowApplied > 0 && hostRemoteCandidates === 0 && hostIceStatsAt > 0 && now - hostIceStatsAt < 10000) {
+  if (
+    hostFlowApplied > 0 &&
+    hostRemoteCandidates === 0 &&
+    hostIceStatsAt > 0 &&
+    now - hostIceStatsAt < 10000
+  ) {
     return {
       stage: "host.ice.transport.register-remote",
       exact: true,
-      reason: "Host applied candidates but host ICE stats still show zero remote candidates",
+      reason:
+        "Host applied candidates but host ICE stats still show zero remote candidates",
       evidence: {
         hostFlowApplied,
         hostRemoteCandidates,
@@ -1278,7 +1446,8 @@ function classifyExactFailurePoint(context) {
     return {
       stage: "host.ice.post-apply-collapse",
       exact: true,
-      reason: "Host had active ICE checks for this flow, then host ICE stats collapsed to zero without selection",
+      reason:
+        "Host had active ICE checks for this flow, then host ICE stats collapsed to zero without selection",
       evidence: {
         hostNetPairs,
         hostNetRemote,
@@ -1298,7 +1467,8 @@ function classifyExactFailurePoint(context) {
     return {
       stage: "ice.pair-formation",
       exact: true,
-      reason: "Both sides registered remote candidates but no ICE candidate pairs were formed",
+      reason:
+        "Both sides registered remote candidates but no ICE candidate pairs were formed",
       evidence: {
         browserRemoteCandidates,
         hostRemoteCandidates,
