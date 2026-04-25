@@ -224,7 +224,6 @@ app.innerHTML = `
           ? `<a class="btn alt" href="${escapeHtmlAttr(recommendedActions.secondaryHref)}">${escapeHtml(recommendedActions.secondaryLabel || "Other architecture")}</a>`
           : ""
       }
-      <a class="btn alt" href="#downloads">All Downloads</a>
       <a class="btn alt" href="/web-client/">Use in Browser</a>
     </div>
   </section>
@@ -244,10 +243,8 @@ app.innerHTML = `
         { label: "arm64", href: APP_LINKS.linuxArm64 },
         { label: "x64", href: APP_LINKS.linuxX64 },
       ])}
-      ${downloadCardWithOptions("Mobile", "iOS / Android", [
-        { label: "iOS (App Store)", href: APP_LINKS.ios },
-        { label: "Android (Coming soon)", href: "" },
-      ])}
+      ${downloadCard("iOS", "App Store", APP_LINKS.ios)}
+      ${downloadCard("Android", "Google Play", APP_LINKS.android)}
     </div>
   </section>
 
