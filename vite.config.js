@@ -6,7 +6,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         landing: fileURLToPath(new URL("./index.html", import.meta.url)),
-        download: fileURLToPath(new URL("./download.html", import.meta.url)),
         legalNotice: fileURLToPath(
           new URL("./impressum.html", import.meta.url),
         ),

@@ -8,7 +8,9 @@ import {
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
 import { openDriveViaRelayInvite } from "./lib/relay-drive.js";
 import {
+  APP_LINKS,
   buildDownloadPageUrl,
+  detectClientPlatform,
   buildWebClientInviteUrl,
   toInviteUrl,
   toNativeInviteUrl,
@@ -658,6 +660,15 @@ fallbackOpenNativeBtn.addEventListener("click", () => {
 });
 fallbackDownloadAppBtn.addEventListener("click", () => {
   const nativeInvite = toNativeInviteUrl(inviteEl.value);
+  const platform = detectClientPlatform().id;
+  if (platform === "ios" && APP_LINKS.ios) {
+    location.href = APP_LINKS.ios;
+    return;
+  }
+  if (platform === "android") {
+    statusEl.textContent = "Android app download is coming soon.";
+    return;
+  }
   location.href = buildDownloadPageUrl({
     invite: nativeInvite || "",
     source: "web-client-join-fallback",
@@ -1876,7 +1887,7 @@ function openAppWithFallback(nativeInvite) {
 }
 
 function openAppThenDownload(nativeInvite, source = "web-client") {
-  const downloadUrl = buildDownloadPageUrl({
+  const fallbackUrl = buildDownloadPageUrl({
     invite: nativeInvite,
     source,
     auto: true,
@@ -1904,13 +1915,13 @@ function openAppThenDownload(nativeInvite, source = "web-client") {
   timer = setTimeout(() => {
     if (done) return;
     finish();
-    location.href = downloadUrl;
+    location.href = fallbackUrl;
   }, 1500);
 
   try {
     location.href = nativeInvite;
   } catch {
     finish();
-    location.href = downloadUrl;
+    location.href = fallbackUrl;
   }
 }

@@ -217,19 +217,19 @@ app.innerHTML = `
       ${
         recommendedActions.primaryHref
           ? `<a class="btn primary" href="${escapeHtmlAttr(recommendedActions.primaryHref)}">${escapeHtml(recommendedActions.primaryLabel || `Download for ${platform.label}`)}</a>`
-          : `<a class="btn primary" href="/download.html">Download App</a>`
+          : `<a class="btn primary" href="#downloads">Download App</a>`
       }
       ${
         recommendedActions.secondaryHref
           ? `<a class="btn alt" href="${escapeHtmlAttr(recommendedActions.secondaryHref)}">${escapeHtml(recommendedActions.secondaryLabel || "Other architecture")}</a>`
           : ""
       }
-      <a class="btn alt" href="/download.html">All Downloads</a>
+      <a class="btn alt" href="#downloads">All Downloads</a>
       <a class="btn alt" href="/web-client/">Use in Browser</a>
     </div>
   </section>
 
-  <section class="downloads">
+  <section id="downloads" class="downloads">
     <div class="downloads-head">
       <h2 class="downloads-title">Downloads</h2>
       <span class="mini">No account required</span>
@@ -244,7 +244,10 @@ app.innerHTML = `
         { label: "arm64", href: APP_LINKS.linuxArm64 },
         { label: "x64", href: APP_LINKS.linuxX64 },
       ])}
-      ${downloadCard("Mobile", "iOS / Android", "/download.html")}
+      ${downloadCardWithOptions("Mobile", "iOS / Android", [
+        { label: "iOS (App Store)", href: APP_LINKS.ios },
+        { label: "Android (Coming soon)", href: "" },
+      ])}
     </div>
   </section>
 

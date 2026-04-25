@@ -40,7 +40,8 @@ export const APP_LINKS = {
   ),
   linuxX64: String(ENV.VITE_LINUX_INSTALLER_X64_URL || FALLBACK_LINUX_X64_URL),
   ios: String(ENV.VITE_IOS_APP_URL || ""),
-  android: String(ENV.VITE_ANDROID_APP_URL || ""),
+  // Android intentionally hidden for now on the public website.
+  android: "",
   releases: String(ENV.VITE_RELEASES_URL || FALLBACK_RELEASES_URL),
 };
 
@@ -101,7 +102,8 @@ export function buildDownloadPageUrl({
   if (invite) params.set("invite", invite);
   if (source) params.set("source", source);
   if (auto) params.set("auto", "1");
-  return `/download.html?${params.toString()}`;
+  const query = params.toString();
+  return query ? `/?${query}#downloads` : "/#downloads";
 }
 
 export function buildWebClientInviteUrl(invite = "") {
