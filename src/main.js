@@ -7,6 +7,7 @@ import {
 } from "./lib/download.js";
 import { openDriveViaWebRtcInvite } from "./lib/webrtc-client.js";
 import { openDriveViaRelayInvite } from "./lib/relay-drive.js";
+import { initTheme } from "./lib/theme.js";
 import {
   APP_LINKS,
   buildDownloadPageUrl,
@@ -24,33 +25,109 @@ const app = document.getElementById("app");
 
 app.innerHTML = `
   <style>
+    html,
+    body {
+      min-height: 100%;
+    }
+    :root[data-theme="light"] {
+      --bg: #f4f5f7;
+      --bg-2: #eef1f4;
+      --bg-radial-1: rgba(27, 163, 68, 0.14);
+      --bg-radial-2: rgba(14, 108, 44, 0.09);
+      --panel: #ffffff;
+      --panel-2: #ffffff;
+      --line: #d8dce3;
+      --text: #171a21;
+      --muted: #5e6675;
+      --accent: #1ba344;
+      --accent-2: #158238;
+      --accent-soft: #eef9f1;
+      --link: #1f5a36;
+      --shadow: rgba(17, 26, 33, 0.12);
+    }
+    :root[data-theme="dark"] {
+      --bg: #121212;
+      --bg-2: #161616;
+      --bg-radial-1: rgba(27, 163, 68, 0.2);
+      --bg-radial-2: rgba(13, 84, 36, 0.22);
+      --panel: #161616;
+      --panel-2: #1a1a1a;
+      --line: #2a2a2a;
+      --text: #f1f3f4;
+      --muted: #a4a7ad;
+      --accent: #1ba344;
+      --accent-2: #158238;
+      --accent-soft: #1d2a20;
+      --link: #6ed38a;
+      --shadow: rgba(0, 0, 0, 0.38);
+    }
     body {
       margin: 0;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: #1f3342;
-      background: radial-gradient(circle at top left, #e8f4ef, #f5f8fb);
+      color: var(--text);
+      background:
+        radial-gradient(1200px 520px at 15% -10%, var(--bg-radial-1) 0%, transparent 62%),
+        radial-gradient(900px 440px at 100% 0%, var(--bg-radial-2) 0%, transparent 64%),
+        linear-gradient(180deg, var(--bg), var(--bg-2));
+      background-repeat: no-repeat, no-repeat, no-repeat;
+      background-size: 100%;
+      min-height: 100vh;
     }
     main {
       max-width: 780px;
-      margin: 48px auto;
+      margin: 0px auto 0;
       padding: 24px;
-      background: #fff;
-      border: 1px solid #d7e2ea;
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      border: 1px solid var(--line);
       border-radius: 16px;
-      box-shadow: 0 18px 42px rgba(31, 51, 66, 0.09);
+      box-shadow: 0 18px 42px var(--shadow);
+    }
+    .top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .theme-switch {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .theme-btn {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 7px 10px;
+      border-radius: 9px;
+      font-weight: 700;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      margin-top: 0;
+    }
+    .theme-btn.is-active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
     }
     textarea {
       width: 100%;
       min-height: 88px;
       border-radius: 12px;
-      border: 1px solid #c8d6e2;
+      border: 1px solid var(--line);
+      color: var(--text);
+      background: var(--panel);
       padding: 10px;
       box-sizing: border-box;
     }
     button {
       border: 0;
       border-radius: 999px;
-      background: #1f7a68;
+      background: var(--accent);
       color: #fff;
       padding: 10px 16px;
       margin-top: 12px;
@@ -63,9 +140,9 @@ app.innerHTML = `
       pointer-events: none;
     }
     .ghost {
-      border: 1px solid #1f7a68;
+      border: 1px solid var(--accent);
       background: transparent;
-      color: #1f7a68;
+      color: var(--accent);
       margin-left: 8px;
     }
     .join-spinner {
@@ -89,7 +166,7 @@ app.innerHTML = `
       margin-top: 12px;
     }
     .bulk-count {
-      color: #5f7688;
+      color: var(--muted);
       font-size: 13px;
     }
     .menu-wrap {
@@ -99,7 +176,7 @@ app.innerHTML = `
     .menu-btn {
       margin-top: 0;
       border-radius: 10px;
-      background: #2a5973;
+      background: var(--accent);
       color: #fff;
       padding: 8px 12px;
     }
@@ -108,10 +185,10 @@ app.innerHTML = `
       top: calc(100% + 6px);
       right: 0;
       min-width: 280px;
-      background: #fff;
-      border: 1px solid #d1dde8;
+      background: var(--panel);
+      border: 1px solid var(--line);
       border-radius: 10px;
-      box-shadow: 0 12px 24px rgba(31, 51, 66, 0.18);
+      box-shadow: 0 12px 24px var(--shadow);
       padding: 6px;
       z-index: 20;
     }
@@ -120,8 +197,8 @@ app.innerHTML = `
       margin-top: 0;
       border-radius: 8px;
       text-align: left;
-      background: #f5f8fb;
-      color: #27465b;
+      background: var(--accent-soft);
+      color: var(--link);
       padding: 8px 10px;
     }
     .menu-item + .menu-item {
@@ -135,12 +212,12 @@ app.innerHTML = `
     .files-table th,
     .files-table td {
       text-align: left;
-      border-bottom: 1px solid #e3eaf0;
+      border-bottom: 1px solid var(--line);
       padding: 10px 8px;
       vertical-align: middle;
     }
     .files-table th {
-      color: #667989;
+      color: var(--muted);
       font-size: 13px;
       font-weight: 700;
     }
@@ -158,8 +235,9 @@ app.innerHTML = `
       height: 52px;
       border-radius: 10px;
       border: 1px solid #cfdae5;
-      background: #f0f4f8;
-      color: #4a6173;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -224,7 +302,7 @@ app.innerHTML = `
       margin-top: 10px;
     }
     .join-progress-label {
-      color: #6f8598;
+      color: var(--muted);
       font-size: 13px;
       margin-bottom: 4px;
     }
@@ -233,21 +311,22 @@ app.innerHTML = `
       height: 8px;
       border-radius: 999px;
       background: #d7e4ef;
+      background: var(--line);
       overflow: hidden;
     }
     .join-progress-fill {
       width: 0%;
       height: 100%;
-      background: #1f7a68;
+      background: var(--accent);
       transition: width 160ms ease;
     }
     .download-progress-label {
-      color: #6f8598;
+      color: var(--muted);
       font-size: 13px;
       margin-bottom: 4px;
     }
     .download-progress-sub {
-      color: #7f93a4;
+      color: var(--muted);
       font-size: 12px;
       margin-bottom: 4px;
     }
@@ -255,36 +334,36 @@ app.innerHTML = `
       width: 100%;
       height: 8px;
       border-radius: 999px;
-      background: #d7e4ef;
+      background: var(--line);
       overflow: hidden;
     }
     .download-progress-fill {
       width: 0%;
       height: 100%;
-      background: #1967d2;
+      background: var(--accent);
       transition: width 120ms ease;
     }
     .helper {
       margin-top: 12px;
       padding: 10px 12px;
       border-radius: 10px;
-      border: 1px solid #f1d6a8;
-      background: #fff8ea;
-      color: #6d4d16;
+      border: 1px solid var(--line);
+      background: var(--accent-soft);
+      color: var(--link);
       display: none;
     }
     .helper button {
       margin-top: 8px;
-      background: #6d4d16;
-      color: #fff8ea;
+      background: var(--accent);
+      color: #fff;
     }
     .join-error {
       margin-top: 12px;
       padding: 10px 12px;
       border-radius: 10px;
-      border: 1px solid #efc1cb;
-      background: #fff3f6;
-      color: #6e2a36;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
       display: none;
     }
     .join-error-actions {
@@ -307,7 +386,7 @@ app.innerHTML = `
       margin-left: 0;
     }
     .copy-error-btn {
-      background: #b8435b;
+      background: var(--accent-2);
       color: #fff;
       display: inline-flex;
       align-items: center;
@@ -335,8 +414,8 @@ app.innerHTML = `
       position: relative;
       width: min(1020px, 92vw);
       height: min(760px, 90vh);
-      background: #fff;
-      border: 1px solid #d7e2ea;
+      background: var(--panel);
+      border: 1px solid var(--line);
       border-radius: 14px;
       overflow: hidden;
       display: flex;
@@ -346,7 +425,7 @@ app.innerHTML = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid #e3eaf0;
+      border-bottom: 1px solid var(--line);
       padding: 10px 12px;
     }
     .preview-close {
@@ -355,9 +434,9 @@ app.innerHTML = `
       height: 34px;
       border-radius: 10px;
       padding: 0;
-      background: #dce8f1;
-      color: #2a4558;
-      border: 1px solid #c2d6e6;
+      background: var(--accent-soft);
+      color: var(--link);
+      border: 1px solid var(--line);
     }
     .preview-modal-body {
       flex: 1;
@@ -365,26 +444,26 @@ app.innerHTML = `
       align-items: center;
       justify-content: center;
       padding: 14px;
-      background: #f7fbff;
+      background: var(--panel-2);
     }
     .preview-frame {
       width: 100%;
       height: 100%;
-      border: 2px solid #bccfdf;
+      border: 2px solid var(--line);
       border-radius: 12px;
-      background: #fff;
+      background: var(--panel);
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      color: #567184;
+      color: var(--muted);
     }
     .preview-frame img,
     .preview-frame video {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      background: #fff;
+      background: var(--panel);
     }
     @media (max-width: 760px) {
       main {
@@ -420,8 +499,8 @@ app.innerHTML = `
       }
       .files-table tbody tr {
         display: block;
-        background: #fbfdff;
-        border: 1px solid #dfe8f1;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
         border-radius: 12px;
         padding: 8px 10px;
       }
@@ -435,7 +514,7 @@ app.innerHTML = `
       }
       .files-table tbody td::before {
         content: attr(data-label);
-        color: #6d8396;
+        color: var(--muted);
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.01em;
@@ -462,9 +541,16 @@ app.innerHTML = `
     }
   </style>
 
-  <h1>PearDrop Web Client</h1>
+  <div class="top-row">
+    <h1>PearDrop Web Client</h1>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button class="theme-btn" data-theme-mode="system" aria-pressed="false">System</button>
+      <button class="theme-btn" data-theme-mode="dark" aria-pressed="false">Dark</button>
+      <button class="theme-btn" data-theme-mode="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
   <p>View an invite drive in browser, then download selected files peer-to-peer.</p>
-  <p><a href="/" style="color:#2a5973; font-weight:700; text-decoration:none;">← Back to landing</a></p>
+  <p><a href="/" style="color:var(--link); font-weight:700; text-decoration:none;">← Back to landing</a></p>
 
   <label for="invite">Invite link</label>
   <textarea id="invite" placeholder="Paste peardrops://invite..."></textarea>
@@ -548,6 +634,8 @@ app.innerHTML = `
     </div>
   </div>
 `;
+
+initTheme(app);
 
 const statusEl = document.getElementById("status");
 const joinProgressEl = document.getElementById("join-progress");

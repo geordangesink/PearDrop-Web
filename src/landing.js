@@ -3,6 +3,7 @@ import {
   detectClientPlatform,
   installerUrlForPlatform,
 } from "./lib/app-links.js";
+import { initTheme } from "./lib/theme.js";
 
 const app = document.getElementById("app");
 const platform = detectClientPlatform();
@@ -14,15 +15,37 @@ const recommendedActions = resolveRecommendedActions(
 
 app.innerHTML = `
   <style>
-    :root {
-      --bg: #0b1320;
-      --bg-2: #12233a;
+    :root[data-theme="light"] {
+      --bg: #f4f5f7;
+      --bg-2: #eef1f4;
+      --bg-radial-1: rgba(27, 163, 68, 0.14);
+      --bg-radial-2: rgba(14, 108, 44, 0.09);
       --panel: #ffffff;
-      --line: #d7e3ef;
-      --text: #0f2237;
-      --muted: #647b92;
-      --brand: #1a7cf0;
-      --brand-2: #1262be;
+      --panel-2: #ffffff;
+      --line: #d8dce3;
+      --text: #171a21;
+      --muted: #5e6675;
+      --accent: #1ba344;
+      --accent-2: #158238;
+      --accent-soft: #eef9f1;
+      --link: #1f5a36;
+      --shadow: rgba(17, 26, 33, 0.12);
+    }
+    :root[data-theme="dark"] {
+      --bg: #121212;
+      --bg-2: #161616;
+      --bg-radial-1: rgba(27, 163, 68, 0.2);
+      --bg-radial-2: rgba(13, 84, 36, 0.22);
+      --panel: #161616;
+      --panel-2: #1a1a1a;
+      --line: #2a2a2a;
+      --text: #f1f3f4;
+      --muted: #a4a7ad;
+      --accent: #1ba344;
+      --accent-2: #158238;
+      --accent-soft: #1d2a20;
+      --link: #6ed38a;
+      --shadow: rgba(0, 0, 0, 0.38);
     }
     * {
       box-sizing: border-box;
@@ -31,8 +54,8 @@ app.innerHTML = `
       margin: 0;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
       background:
-        radial-gradient(1200px 520px at 15% -10%, #294a70 0%, transparent 62%),
-        radial-gradient(900px 440px at 100% 0%, #12365a 0%, transparent 64%),
+        radial-gradient(1200px 520px at 15% -10%, var(--bg-radial-1) 0%, transparent 62%),
+        radial-gradient(900px 440px at 100% 0%, var(--bg-radial-2) 0%, transparent 64%),
         linear-gradient(180deg, var(--bg), var(--bg-2));
       color: var(--text);
       min-height: 100vh;
@@ -44,23 +67,67 @@ app.innerHTML = `
       margin: 0 auto;
       border-radius: 20px;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      box-shadow: 0 24px 64px var(--shadow);
     }
     .hero {
       padding: 38px 34px 30px;
       border-bottom: 1px solid var(--line);
       background:
-        radial-gradient(500px 240px at 100% -20%, rgba(26, 124, 240, 0.18), transparent 70%),
-        radial-gradient(520px 230px at -20% -40%, rgba(53, 181, 128, 0.14), transparent 70%);
+        radial-gradient(500px 240px at 100% -20%, rgba(27, 163, 68, 0.17), transparent 70%),
+        radial-gradient(520px 230px at -20% -40%, rgba(21, 130, 56, 0.14), transparent 70%);
+    }
+    .theme-switch {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .theme-btn {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 7px 10px;
+      border-radius: 9px;
+      font-weight: 700;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .theme-btn.is-active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
     }
     h1 {
-      margin: 16px 0 0;
+      margin: 8px 0 0;
       font-size: clamp(40px, 7vw, 66px);
       line-height: 0.95;
       letter-spacing: -0.03em;
-      color: #0a1e33;
+      color: var(--text);
+    }
+    .title-row {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .title-logo {
+      width: 66px;
+      height: 66px;
+      object-fit: contain;
+      background: var(--panel);
+      flex: 0 0 auto;
     }
     .sub {
       margin: 12px 0 0;
@@ -91,13 +158,13 @@ app.innerHTML = `
     }
     .btn.primary {
       color: #fff;
-      background: linear-gradient(180deg, var(--brand), var(--brand-2));
-      box-shadow: 0 10px 24px rgba(26, 124, 240, 0.3);
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      box-shadow: 0 10px 24px rgba(27, 163, 68, 0.28);
     }
     .btn.alt {
-      color: #274a64;
-      background: #f1f7fd;
-      border-color: #c5d7e8;
+      color: var(--link);
+      background: var(--accent-soft);
+      border-color: var(--line);
     }
     .downloads {
       padding: 22px 24px 18px;
@@ -127,7 +194,7 @@ app.innerHTML = `
     .card {
       border: 1px solid var(--line);
       border-radius: 13px;
-      background: #fff;
+      background: var(--panel);
       padding: 12px;
       display: flex;
       flex-direction: column;
@@ -137,7 +204,7 @@ app.innerHTML = `
     .card h2 {
       margin: 0;
       font-size: 18px;
-      color: #163149;
+      color: var(--text);
     }
     .card p {
       margin: 0;
@@ -163,7 +230,7 @@ app.innerHTML = `
       gap: 8px 14px;
     }
     .footer-copy {
-      color: #7890a6;
+      color: var(--muted);
       font-size: 12px;
     }
     .legal {
@@ -172,11 +239,11 @@ app.innerHTML = `
       gap: 10px;
     }
     .legal a {
-      color: #4a6680;
+      color: var(--link);
       font-size: 13px;
       font-weight: 600;
       text-decoration: none;
-      border-bottom: 1px solid #c5d5e5;
+      border-bottom: 1px solid var(--line);
     }
     @media (max-width: 980px) {
       .grid {
@@ -198,6 +265,13 @@ app.innerHTML = `
       .sub {
         font-size: 16px;
       }
+      .title-row {
+        gap: 10px;
+      }
+      .title-logo {
+        width: 42px;
+        height: 42px;
+      }
       .downloads {
         padding: 16px 12px 12px;
       }
@@ -211,7 +285,17 @@ app.innerHTML = `
   </style>
 
   <section class="hero">
-    <h1>PearDrop</h1>
+    <div class="title-row">
+      <div class="title-brand">
+        <img class="title-logo" src="/images/logo.png" alt="PearDrop logo" />
+        <h1>PearDrop</h1>
+      </div>
+      <div class="theme-switch" role="group" aria-label="Theme">
+        <button class="theme-btn" data-theme-mode="system" aria-pressed="false">System</button>
+        <button class="theme-btn" data-theme-mode="dark" aria-pressed="false">Dark</button>
+        <button class="theme-btn" data-theme-mode="light" aria-pressed="false">Light</button>
+      </div>
+    </div>
     <p class="sub">Share files with one link. Fast in app, instant in browser.</p>
     <div class="actions">
       ${
@@ -259,6 +343,8 @@ app.innerHTML = `
   </footer>
 `;
 
+initTheme(app);
+
 function downloadCard(name, ext, href) {
   const url = String(href || "").trim();
   return `
@@ -299,7 +385,7 @@ function resolveRecommendedActions(platformInfo, fallbackInstaller) {
   if (id === "mac") {
     return {
       primaryHref: APP_LINKS.macArm64,
-      primaryLabel: "Download for macOS",
+      primaryLabel: "Download for macOS (M-chip)",
       secondaryHref: APP_LINKS.macX64,
       secondaryLabel: "macOS Intel (x64)",
     };
