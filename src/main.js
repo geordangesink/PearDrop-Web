@@ -753,8 +753,8 @@ fallbackDownloadAppBtn.addEventListener("click", () => {
     location.href = APP_LINKS.ios;
     return;
   }
-  if (platform === "android") {
-    statusEl.textContent = "Android app download is coming soon.";
+  if (platform === "android" && APP_LINKS.android) {
+    location.href = APP_LINKS.android;
     return;
   }
   location.href = buildDownloadPageUrl({

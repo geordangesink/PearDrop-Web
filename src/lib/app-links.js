@@ -10,6 +10,8 @@ const FALLBACK_LINUX_ARM64_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-arm64.AppImage";
 const FALLBACK_LINUX_X64_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-x64.AppImage";
+const FALLBACK_ANDROID_URL =
+  "https://play.google.com/store/apps/details?id=online.peardrop.app&pcampaignid=web_share";
 const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
 
 const ENV = typeof import.meta !== "undefined" ? import.meta.env || {} : {};
@@ -40,7 +42,7 @@ export const APP_LINKS = {
   ),
   linuxX64: String(ENV.VITE_LINUX_INSTALLER_X64_URL || FALLBACK_LINUX_X64_URL),
   ios: String(ENV.VITE_IOS_APP_URL || ""),
-  android: String(ENV.VITE_ANDROID_APP_URL || ""),
+  android: String(ENV.VITE_ANDROID_APP_URL || FALLBACK_ANDROID_URL),
   releases: String(ENV.VITE_RELEASES_URL || FALLBACK_RELEASES_URL),
 };
 
