@@ -80,11 +80,13 @@ app.innerHTML = `
     }
     .theme-switch {
       display: inline-flex;
+      flex-wrap: wrap;
       gap: 6px;
       padding: 4px;
       border-radius: 12px;
       border: 1px solid var(--line);
       background: var(--panel);
+      max-width: 100%;
     }
     .theme-btn {
       border: 1px solid var(--line);
@@ -96,6 +98,7 @@ app.innerHTML = `
       font-size: 12px;
       line-height: 1;
       cursor: pointer;
+      white-space: nowrap;
     }
     .theme-btn.is-active {
       border-color: var(--accent);
@@ -266,11 +269,22 @@ app.innerHTML = `
         font-size: 16px;
       }
       .title-row {
+        flex-direction: column;
+        align-items: flex-start;
         gap: 10px;
+      }
+      .title-brand {
+        width: 100%;
       }
       .title-logo {
         width: 42px;
         height: 42px;
+      }
+      h1 {
+        font-size: clamp(34px, 11vw, 44px);
+      }
+      .theme-switch {
+        width: 100%;
       }
       .downloads {
         padding: 16px 12px 12px;
