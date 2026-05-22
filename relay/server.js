@@ -40,10 +40,7 @@ wss.on("connection", (socket) => {
         hardenDestroySend(node, socket);
       })
       .catch((error) => {
-        console.warn(
-          "[relay] relay handshake failed:",
-          summarizeError(error),
-        );
+        console.warn("[relay] relay handshake failed:", summarizeError(error));
         try {
           socket.close();
         } catch {}
@@ -183,7 +180,9 @@ function hardenDestroySend(node, socket) {
     try {
       originalSend(normalized);
     } catch (error) {
-      if (summarizeError(error).toLowerCase().includes("uint must be positive")) {
+      if (
+        summarizeError(error).toLowerCase().includes("uint must be positive")
+      ) {
         console.warn(
           "[relay] suppressed invalid destroy encode:",
           summarizeError(error),

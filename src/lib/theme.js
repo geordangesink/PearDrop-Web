@@ -24,7 +24,11 @@ export function initTheme(toggleRoot = document) {
   const media =
     typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia("(prefers-color-scheme: dark)")
-      : { matches: false, addEventListener: () => {}, removeEventListener: () => {} };
+      : {
+          matches: false,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        };
 
   let mode = readStoredMode();
   const root = document.documentElement;
@@ -37,7 +41,9 @@ export function initTheme(toggleRoot = document) {
 
     const buttons = toggleRoot.querySelectorAll("[data-theme-mode]");
     for (const button of buttons) {
-      const targetMode = String(button.getAttribute("data-theme-mode") || "").toLowerCase();
+      const targetMode = String(
+        button.getAttribute("data-theme-mode") || "",
+      ).toLowerCase();
       const active = targetMode === mode;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
@@ -49,7 +55,9 @@ export function initTheme(toggleRoot = document) {
     if (!(target instanceof HTMLElement)) return;
     const node = target.closest("[data-theme-mode]");
     if (!(node instanceof HTMLElement)) return;
-    const nextMode = String(node.getAttribute("data-theme-mode") || "").toLowerCase();
+    const nextMode = String(
+      node.getAttribute("data-theme-mode") || "",
+    ).toLowerCase();
     if (!isMode(nextMode)) return;
     mode = nextMode;
     try {
@@ -71,4 +79,3 @@ export function initTheme(toggleRoot = document) {
     media.removeEventListener("change", onMediaChange);
   };
 }
-
