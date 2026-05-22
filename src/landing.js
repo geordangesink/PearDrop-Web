@@ -310,7 +310,7 @@ app.innerHTML = `
         <button class="theme-btn" data-theme-mode="light" aria-pressed="false">Light</button>
       </div>
     </div>
-    <p class="sub">Share files with one link. Fast in browser, instant in app.</p>
+    <p class="sub">Share files with one link in app. Download fast in browser, instant in app.</p>
     <div class="actions">
       ${
         recommendedActions.primaryHref
