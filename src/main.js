@@ -562,6 +562,7 @@ app.innerHTML = `
   <h2>Files</h2>
   <div class="bulk-actions">
     <span id="bulk-count" class="bulk-count">0 selected</span>
+    <button id="toggle-select-btn" class="menu-btn" type="button">Select all</button>
     <span class="menu-wrap">
       <button id="download-selected-btn" class="menu-btn">Download selected ▾</button>
       <div id="download-selected-menu" class="menu hidden">
@@ -682,6 +683,7 @@ const previewTitleEl = document.getElementById("preview-title");
 const previewFrameEl = document.getElementById("preview-frame");
 const checkAllEl = document.getElementById("check-all");
 const bulkCountEl = document.getElementById("bulk-count");
+const toggleSelectBtn = document.getElementById("toggle-select-btn");
 const downloadSelectedBtn = document.getElementById("download-selected-btn");
 const downloadSelectedMenu = document.getElementById("download-selected-menu");
 const downloadSelectedTgzBtn = document.getElementById("download-selected-tgz");
@@ -820,6 +822,19 @@ checkAllEl.addEventListener("change", () => {
   selectedEntryKeys = new Set();
   if (checkAllEl.checked) {
     for (let i = 0; i < currentEntries.length; i++) {
+      selectedEntryKeys.add(entryKey(currentEntries[i], i));
+    }
+  }
+  renderFileRows(currentEntries);
+});
+toggleSelectBtn.addEventListener("click", () => {
+  const total = currentEntries.length;
+  if (!total || bulkDownloadInFlight) return;
+  const selected = getSelectedEntries().length;
+  const shouldSelectAll = selected !== total;
+  selectedEntryKeys = new Set();
+  if (shouldSelectAll) {
+    for (let i = 0; i < total; i++) {
       selectedEntryKeys.add(entryKey(currentEntries[i], i));
     }
   }
@@ -1495,8 +1510,11 @@ function getSelectedEntries() {
 function syncBulkSelectionUi() {
   const total = currentEntries.length;
   const selected = getSelectedEntries().length;
+  const allSelected = total > 0 && selected === total;
   bulkCountEl.textContent = `${selected} selected`;
-  checkAllEl.checked = total > 0 && selected === total;
+  checkAllEl.checked = allSelected;
+  toggleSelectBtn.disabled = bulkDownloadInFlight || total === 0;
+  toggleSelectBtn.textContent = allSelected ? "Deselect all" : "Select all";
   const disableBulk = bulkDownloadInFlight || selected === 0 || total === 0;
   downloadSelectedBtn.disabled = disableBulk;
   downloadSelectedBtn.classList.toggle("is-loading", bulkDownloadInFlight);
