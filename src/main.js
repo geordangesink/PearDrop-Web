@@ -343,6 +343,58 @@ app.innerHTML = `
       background: var(--accent);
       transition: width 120ms ease;
     }
+    .bulk-progress-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .bulk-progress-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(12, 21, 28, 0.58);
+    }
+    .bulk-progress-card {
+      position: relative;
+      width: min(480px, 92vw);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 18px 36px var(--shadow);
+      padding: 14px;
+    }
+    .bulk-progress-title {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .bulk-progress-status {
+      margin: 0 0 10px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .bulk-progress-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--line);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .bulk-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 120ms ease;
+    }
+    .bulk-progress-cancel {
+      margin-top: 0;
+      width: 100%;
+    }
     .helper {
       margin-top: 12px;
       padding: 10px 12px;
@@ -598,6 +650,17 @@ app.innerHTML = `
       <div id="download-progress-fill" class="download-progress-fill"></div>
     </div>
   </div>
+  <div id="bulk-progress-modal" class="bulk-progress-modal hidden" role="dialog" aria-modal="true" aria-labelledby="bulk-progress-title">
+    <div class="bulk-progress-backdrop"></div>
+    <div class="bulk-progress-card">
+      <h3 id="bulk-progress-title" class="bulk-progress-title">Preparing download...</h3>
+      <p id="bulk-progress-status" class="bulk-progress-status">Starting...</p>
+      <div class="bulk-progress-track">
+        <div id="bulk-progress-fill" class="bulk-progress-fill"></div>
+      </div>
+      <button id="bulk-progress-cancel" class="ghost bulk-progress-cancel" type="button">Cancel</button>
+    </div>
+  </div>
   <div id="relay-helper" class="helper">
     <div><strong>Relay not running?</strong> Start it with:</div>
     <code id="relay-cmd">cd /Users/geordangesink/Documents/Projects/Pear Drops/web && npm run relay</code>
@@ -650,6 +713,11 @@ const downloadProgressSubEl = document.getElementById("download-progress-sub");
 const downloadProgressFillEl = document.getElementById(
   "download-progress-fill",
 );
+const bulkProgressModalEl = document.getElementById("bulk-progress-modal");
+const bulkProgressTitleEl = document.getElementById("bulk-progress-title");
+const bulkProgressStatusEl = document.getElementById("bulk-progress-status");
+const bulkProgressFillEl = document.getElementById("bulk-progress-fill");
+const bulkProgressCancelBtn = document.getElementById("bulk-progress-cancel");
 const downloadProgressState = {
   startedAt: 0,
   total: 0,
@@ -705,6 +773,7 @@ let joinProgressTimer = null;
 let joinProgressValue = 0;
 let lastJoinErrorMessage = "";
 let bulkDownloadInFlight = false;
+let activeBulkDownloadSignal = null;
 const JOIN_PHASES = Object.freeze({
   "parse-invite": { value: 8, label: "Parsing invite..." },
   "open-drive": { value: 14, label: "Preparing connection..." },
@@ -818,6 +887,14 @@ downloadSelectedIndividualBtn.addEventListener(
   "click",
   () => void downloadSelectedIndividually(),
 );
+bulkProgressCancelBtn.addEventListener("click", () => {
+  if (!activeBulkDownloadSignal) return;
+  activeBulkDownloadSignal.cancelled = true;
+  activeBulkDownloadSignal.reason = "Cancelled by user.";
+  bulkProgressCancelBtn.disabled = true;
+  bulkProgressCancelBtn.textContent = "Cancelling...";
+  if (statusEl) statusEl.textContent = "Cancelling download...";
+});
 checkAllEl.addEventListener("change", () => {
   selectedEntryKeys = new Set();
   if (checkAllEl.checked) {
@@ -1146,6 +1223,8 @@ async function downloadEntry(entry, options = {}) {
   const manageProgress = options.manageProgress !== false;
   const onProgress =
     typeof options.onProgress === "function" ? options.onProgress : null;
+  const signal = options.signal || null;
+  const shareMediaMode = String(options.shareMediaMode || "ask").toLowerCase();
   const chunkSize = Number(options.chunkSize || 64 * 1024);
   if (!currentSession) throw new Error("No active session");
   const lockKey = String(options.entryKey || "").trim();
@@ -1189,6 +1268,9 @@ async function downloadEntry(entry, options = {}) {
     for await (const chunk of readInviteEntryChunks(currentSession, entry, {
       chunkSize,
     })) {
+      if (signal?.cancelled) {
+        throw new Error(String(signal.reason || "Cancelled."));
+      }
       const bytes =
         chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
       doneBytes += bytes.byteLength;
@@ -1213,7 +1295,9 @@ async function downloadEntry(entry, options = {}) {
       const blob = new Blob(chunks, {
         type: entry.mimeType || "application/octet-stream",
       });
-      const handledByShareSheet = await maybeShareMediaToPhotos(blob, entry);
+      const handledByShareSheet = await maybeShareMediaToPhotos(blob, entry, {
+        mode: shareMediaMode,
+      });
       if (handledByShareSheet) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1257,9 +1341,16 @@ async function downloadSelectedIndividually() {
     (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
     0,
   );
+  const shareMediaMode = resolveBulkMediaShareMode(picked);
   const useByteProgress = knownTotalBytes > 0;
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
   let downloadedBytes = 0;
+  const signal = {
+    cancelled: false,
+    reason: "",
+  };
+  activeBulkDownloadSignal = signal;
+  showBulkProgressModal(0, totalForProgress, "Downloading selected files...");
   showDownloadProgress(
     0,
     totalForProgress,
@@ -1269,6 +1360,7 @@ async function downloadSelectedIndividually() {
   );
   try {
     for (let i = 0; i < picked.length; i++) {
+      if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
       const entry = picked[i];
       showDownloadProgress(
         useByteProgress ? downloadedBytes : i,
@@ -1277,10 +1369,18 @@ async function downloadSelectedIndividually() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count",
       );
+      showBulkProgressModal(
+        useByteProgress ? downloadedBytes : i,
+        totalForProgress,
+        "Downloading selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+      );
       const baseAtStart = downloadedBytes;
       await downloadEntry(entry, {
         manageProgress: false,
         entryKey: entryKey(entry, currentEntries.indexOf(entry)),
+        shareMediaMode,
+        signal,
         onProgress(doneForFile) {
           downloadedBytes = baseAtStart + Number(doneForFile || 0);
           showDownloadProgress(
@@ -1290,10 +1390,17 @@ async function downloadSelectedIndividually() {
             `Current file: ${entry?.name || `file-${i + 1}`}`,
             useByteProgress ? "bytes" : "count",
           );
+          showBulkProgressModal(
+            useByteProgress ? downloadedBytes : i,
+            totalForProgress,
+            "Downloading selected files...",
+            `Current file: ${entry?.name || `file-${i + 1}`}`,
+          );
         },
       });
       downloadedBytes =
         baseAtStart + Math.max(0, Number(entry?.byteLength || 0));
+      if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
       showDownloadProgress(
         useByteProgress ? downloadedBytes : i + 1,
         totalForProgress,
@@ -1301,13 +1408,27 @@ async function downloadSelectedIndividually() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count",
       );
+      showBulkProgressModal(
+        useByteProgress ? downloadedBytes : i + 1,
+        totalForProgress,
+        "Downloading selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+      );
       await sleep(40);
     }
     statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
+  } catch (error) {
+    if (signal.cancelled) {
+      statusEl.textContent = "Download cancelled.";
+      return;
+    }
+    throw error;
   } finally {
+    activeBulkDownloadSignal = null;
     bulkDownloadInFlight = false;
     renderFileRows(currentEntries);
     hideDownloadProgress();
+    hideBulkProgressModal();
   }
 }
 
@@ -1333,6 +1454,12 @@ async function downloadSelectedAsTgz() {
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
   let packedBytes = 0;
   const chunkSize = 64 * 1024;
+  const signal = {
+    cancelled: false,
+    reason: "",
+  };
+  activeBulkDownloadSignal = signal;
+  showBulkProgressModal(0, totalForProgress, "Packing selected files...");
   showDownloadProgress(
     0,
     totalForProgress,
@@ -1342,6 +1469,7 @@ async function downloadSelectedAsTgz() {
   );
   try {
     for (let i = 0; i < picked.length; i++) {
+      if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
       const entry = picked[i];
       showDownloadProgress(
         useByteProgress ? packedBytes : i,
@@ -1350,12 +1478,19 @@ async function downloadSelectedAsTgz() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count",
       );
+      showBulkProgressModal(
+        useByteProgress ? packedBytes : i,
+        totalForProgress,
+        "Packing selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+      );
       const baseAtStart = packedBytes;
       let fileDone = 0;
       const fileChunks = [];
       for await (const chunk of readInviteEntryChunks(currentSession, entry, {
         chunkSize,
       })) {
+        if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
         const bytes =
           chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
         if (!bytes.byteLength) continue;
@@ -1368,6 +1503,12 @@ async function downloadSelectedAsTgz() {
           "Packing selected files...",
           `Current file: ${entry?.name || `file-${i + 1}`}`,
           useByteProgress ? "bytes" : "count",
+        );
+        showBulkProgressModal(
+          useByteProgress ? packedBytes : i,
+          totalForProgress,
+          "Packing selected files...",
+          `Current file: ${entry?.name || `file-${i + 1}`}`,
         );
       }
       const bytes = concatBytes(fileChunks);
@@ -1385,19 +1526,74 @@ async function downloadSelectedAsTgz() {
         `Current file: ${entry?.name || `file-${i + 1}`}`,
         useByteProgress ? "bytes" : "count",
       );
+      showBulkProgressModal(
+        useByteProgress ? packedBytes : i + 1,
+        totalForProgress,
+        "Packing selected files...",
+        `Current file: ${entry?.name || `file-${i + 1}`}`,
+      );
     }
 
+    if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
     const tarBytes = buildTarArchive(files);
+    if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
     const tgzBytes = await gzipBytes(tarBytes);
+    if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
     const blob = new Blob([tgzBytes], { type: "application/gzip" });
     const fileName = `pear-drops-${Date.now()}.tgz`;
     triggerBrowserDownload(blob, fileName);
     statusEl.textContent = `Downloaded ${fileName}`;
+  } catch (error) {
+    if (signal.cancelled) {
+      statusEl.textContent = "Download cancelled.";
+      return;
+    }
+    throw error;
   } finally {
+    activeBulkDownloadSignal = null;
     bulkDownloadInFlight = false;
     renderFileRows(currentEntries);
     hideDownloadProgress();
+    hideBulkProgressModal();
   }
+}
+
+function showBulkProgressModal(done, total, title, subtitle = "") {
+  if (
+    !bulkProgressModalEl ||
+    !bulkProgressTitleEl ||
+    !bulkProgressStatusEl ||
+    !bulkProgressFillEl
+  ) {
+    return;
+  }
+  const safeTotal = Math.max(1, Number(total || 0));
+  const safeDone = Math.max(0, Math.min(safeTotal, Number(done || 0)));
+  const percent = Math.round((safeDone / safeTotal) * 100);
+  bulkProgressTitleEl.textContent = String(title || "Preparing download...");
+  bulkProgressStatusEl.textContent = subtitle
+    ? `${subtitle} (${percent}%)`
+    : `${percent}% complete`;
+  bulkProgressFillEl.style.width = `${percent}%`;
+  bulkProgressModalEl.classList.remove("hidden");
+}
+
+function hideBulkProgressModal() {
+  if (
+    !bulkProgressModalEl ||
+    !bulkProgressTitleEl ||
+    !bulkProgressStatusEl ||
+    !bulkProgressFillEl ||
+    !bulkProgressCancelBtn
+  ) {
+    return;
+  }
+  bulkProgressFillEl.style.width = "0%";
+  bulkProgressTitleEl.textContent = "Preparing download...";
+  bulkProgressStatusEl.textContent = "Starting...";
+  bulkProgressCancelBtn.disabled = false;
+  bulkProgressCancelBtn.textContent = "Cancel";
+  bulkProgressModalEl.classList.add("hidden");
 }
 
 function showDownloadProgress(
@@ -1831,7 +2027,9 @@ function isLikelyMobileBrowser() {
   return /iphone|ipad|ipod|android|mobile/.test(ua);
 }
 
-async function maybeShareMediaToPhotos(blob, entry) {
+async function maybeShareMediaToPhotos(blob, entry, options = {}) {
+  const mode = String(options.mode || "ask").toLowerCase();
+  if (mode === "never") return false;
   if (!isLikelyMobileBrowser()) return false;
   if (!isMediaFileEntry(entry)) return false;
   if (typeof navigator?.share !== "function") return false;
@@ -1849,10 +2047,12 @@ async function maybeShareMediaToPhotos(blob, entry) {
     }
   }
 
-  const shouldOpenShareSheet = window.confirm(
-    "Save to Photos? We can open the share sheet so you can choose “Save Image” or “Save Video”.",
-  );
-  if (!shouldOpenShareSheet) return false;
+  if (mode !== "always") {
+    const shouldOpenShareSheet = window.confirm(
+      "Save to Photos? We can open the share sheet so you can choose “Save Image” or “Save Video”.",
+    );
+    if (!shouldOpenShareSheet) return false;
+  }
 
   try {
     await navigator.share({
@@ -1867,6 +2067,18 @@ async function maybeShareMediaToPhotos(blob, entry) {
     if (String(error?.name || "") === "AbortError") return true;
     return false;
   }
+}
+
+function resolveBulkMediaShareMode(entries = []) {
+  const hasMedia =
+    Array.isArray(entries) && entries.some((entry) => isMediaFileEntry(entry));
+  if (!hasMedia) return "never";
+  if (!isLikelyMobileBrowser()) return "never";
+  if (typeof navigator?.share !== "function") return "never";
+  const shouldShare = window.confirm(
+    "Save media to Photos for this whole batch? If you choose Yes, we will use Photos share flow for all selected photos/videos.",
+  );
+  return shouldShare ? "always" : "never";
 }
 
 function escapeHtml(value) {
