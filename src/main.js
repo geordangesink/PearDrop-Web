@@ -766,6 +766,7 @@ const activeDownloadEntryKeys = new Set();
 const previewCache = new Map();
 const thumbnailCache = new Map();
 const thumbnailLoading = new Set();
+const thumbnailQueue = [];
 const objectUrls = new Set();
 let joinInFlight = false;
 let activeJoinToken = 0;
@@ -774,6 +775,10 @@ let joinProgressValue = 0;
 let lastJoinErrorMessage = "";
 let bulkDownloadInFlight = false;
 let activeBulkDownloadSignal = null;
+let activeThumbnailLoads = 0;
+let thumbnailGeneration = 0;
+let thumbnailPrefetchPaused = false;
+let fileRowsRenderQueued = false;
 const JOIN_PHASES = Object.freeze({
   "parse-invite": { value: 8, label: "Parsing invite..." },
   "open-drive": { value: 14, label: "Preparing connection..." },
@@ -1334,6 +1339,7 @@ async function downloadSelectedIndividually() {
   }
   if (bulkDownloadInFlight) return;
   bulkDownloadInFlight = true;
+  pauseThumbnailPrefetch();
   renderFileRows(currentEntries);
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Downloading ${picked.length} selected file(s)...`;
@@ -1341,7 +1347,6 @@ async function downloadSelectedIndividually() {
     (sum, entry) => sum + Math.max(0, Number(entry?.byteLength || 0)),
     0,
   );
-  const shareMediaMode = resolveBulkMediaShareMode(picked);
   const useByteProgress = knownTotalBytes > 0;
   const totalForProgress = useByteProgress ? knownTotalBytes : picked.length;
   let downloadedBytes = 0;
@@ -1359,6 +1364,106 @@ async function downloadSelectedIndividually() {
     useByteProgress ? "bytes" : "count",
   );
   try {
+    const useIosBatchFlow = isLikelyIosSafari();
+    if (useIosBatchFlow) {
+      const downloaded = [];
+      for (let i = 0; i < picked.length; i++) {
+        if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
+        const entry = picked[i];
+        showDownloadProgress(
+          useByteProgress ? downloadedBytes : i,
+          totalForProgress,
+          "Downloading selected files...",
+          `Current file: ${entry?.name || `file-${i + 1}`}`,
+          useByteProgress ? "bytes" : "count",
+        );
+        showBulkProgressModal(
+          useByteProgress ? downloadedBytes : i,
+          totalForProgress,
+          "Downloading selected files...",
+          `Current file: ${entry?.name || `file-${i + 1}`}`,
+        );
+
+        const fileChunks = [];
+        const baseAtStart = downloadedBytes;
+        let fileDone = 0;
+        for await (const chunk of readInviteEntryChunks(currentSession, entry, {
+          chunkSize: 64 * 1024,
+        })) {
+          if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
+          const bytes =
+            chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk || 0);
+          if (!bytes.byteLength) continue;
+          fileChunks.push(bytes);
+          fileDone += bytes.byteLength;
+          downloadedBytes = baseAtStart + fileDone;
+          showDownloadProgress(
+            useByteProgress ? downloadedBytes : i,
+            totalForProgress,
+            "Downloading selected files...",
+            `Current file: ${entry?.name || `file-${i + 1}`}`,
+            useByteProgress ? "bytes" : "count",
+          );
+          showBulkProgressModal(
+            useByteProgress ? downloadedBytes : i,
+            totalForProgress,
+            "Downloading selected files...",
+            `Current file: ${entry?.name || `file-${i + 1}`}`,
+          );
+        }
+
+        downloaded.push({
+          name: String(entry?.name || `file-${i + 1}`),
+          mimeType: String(entry?.mimeType || "application/octet-stream"),
+          bytes: concatBytes(fileChunks),
+          isMedia: isMediaFileEntry(entry),
+        });
+
+        downloadedBytes =
+          baseAtStart + Math.max(fileDone, Number(entry?.byteLength || 0));
+      }
+
+      showDownloadProgress(
+        totalForProgress,
+        totalForProgress,
+        "Download complete",
+        "Choose where to save",
+        useByteProgress ? "bytes" : "count",
+      );
+      showBulkProgressModal(
+        totalForProgress,
+        totalForProgress,
+        "Download complete",
+        "Choose where to save",
+      );
+
+      const hasMedia = downloaded.some((item) => item.isMedia);
+      const destination = await chooseIosBatchDestination({ hasMedia });
+      if (destination === "cancel") {
+        statusEl.textContent = "Save cancelled.";
+        return;
+      }
+
+      if (destination === "photos") {
+        const mediaFiles = downloaded.filter((item) => item.isMedia);
+        if (!mediaFiles.length) {
+          statusEl.textContent = "No media files in this selection.";
+          return;
+        }
+        await shareFileBatch(mediaFiles, "Save media to Photos");
+        statusEl.textContent =
+          "Opened share sheet once. Choose Save Image/Save Video.";
+        return;
+      }
+
+      if (destination === "files") {
+        await shareFileBatch(downloaded, "Save files");
+        statusEl.textContent = "Opened share sheet once. Choose Save to Files.";
+        return;
+      }
+    }
+
+    const shareMediaMode = resolveBulkMediaShareMode(picked);
     for (let i = 0; i < picked.length; i++) {
       if (signal.cancelled) throw new Error(signal.reason || "Cancelled.");
       const entry = picked[i];
@@ -1426,6 +1531,7 @@ async function downloadSelectedIndividually() {
   } finally {
     activeBulkDownloadSignal = null;
     bulkDownloadInFlight = false;
+    resumeThumbnailPrefetch();
     renderFileRows(currentEntries);
     hideDownloadProgress();
     hideBulkProgressModal();
@@ -1441,6 +1547,7 @@ async function downloadSelectedAsTgz() {
   if (bulkDownloadInFlight) return;
   if (!currentSession) throw new Error("No active session");
   bulkDownloadInFlight = true;
+  pauseThumbnailPrefetch();
   renderFileRows(currentEntries);
   downloadSelectedMenu.classList.add("hidden");
   statusEl.textContent = `Packing ${picked.length} selected file(s) into .tgz...`;
@@ -1552,6 +1659,7 @@ async function downloadSelectedAsTgz() {
   } finally {
     activeBulkDownloadSignal = null;
     bulkDownloadInFlight = false;
+    resumeThumbnailPrefetch();
     renderFileRows(currentEntries);
     hideDownloadProgress();
     hideBulkProgressModal();
@@ -1875,6 +1983,9 @@ function closePreview() {
 }
 
 function clearPreviewCache() {
+  thumbnailGeneration += 1;
+  thumbnailQueue.length = 0;
+  activeThumbnailLoads = 0;
   previewCache.clear();
   thumbnailCache.clear();
   thumbnailLoading.clear();
@@ -1884,22 +1995,44 @@ function clearPreviewCache() {
 }
 
 function queueImageThumbnailLoads(entries) {
+  if (thumbnailPrefetchPaused || bulkDownloadInFlight) return;
   if (!currentSession || !Array.isArray(entries) || !entries.length) return;
   const sessionAtStart = currentSession;
+  const generation = thumbnailGeneration;
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     if (!isImageEntry(entry)) continue;
     const key = entryKey(entry, i);
     if (thumbnailCache.has(key) || thumbnailLoading.has(key)) continue;
     thumbnailLoading.add(key);
-    void loadImageThumbnail(entry, key, sessionAtStart);
+    thumbnailQueue.push({ entry, key, sessionAtStart, generation });
+  }
+  pumpThumbnailQueue();
+}
+
+function pumpThumbnailQueue() {
+  if (thumbnailPrefetchPaused || bulkDownloadInFlight) return;
+  const maxConcurrent = getThumbnailConcurrency();
+  while (activeThumbnailLoads < maxConcurrent && thumbnailQueue.length > 0) {
+    const job = thumbnailQueue.shift();
+    if (!job) break;
+    activeThumbnailLoads += 1;
+    void loadImageThumbnail(job).finally(() => {
+      activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1);
+      pumpThumbnailQueue();
+    });
   }
 }
 
-async function loadImageThumbnail(entry, key, sessionAtStart) {
+async function loadImageThumbnail(job) {
+  const { entry, key, sessionAtStart, generation } = job || {};
   try {
+    if (generation !== thumbnailGeneration) return;
+    if (thumbnailPrefetchPaused || bulkDownloadInFlight) return;
     const bytes = await readInviteEntry(sessionAtStart, entry);
+    if (generation !== thumbnailGeneration) return;
     if (sessionAtStart !== currentSession) return;
+    if (thumbnailPrefetchPaused || bulkDownloadInFlight) return;
     const mime = String(entry?.mimeType || "").toLowerCase();
     const blob = new Blob([bytes], {
       type: mime || "application/octet-stream",
@@ -1912,10 +2045,44 @@ async function loadImageThumbnail(entry, key, sessionAtStart) {
     // keep fallback preview icon when thumbnail fails
   } finally {
     thumbnailLoading.delete(key);
-    if (sessionAtStart === currentSession) {
-      renderFileRows(currentEntries);
+    if (
+      generation === thumbnailGeneration &&
+      sessionAtStart === currentSession &&
+      !thumbnailPrefetchPaused &&
+      !bulkDownloadInFlight
+    ) {
+      requestFileRowsRender();
     }
   }
+}
+
+function requestFileRowsRender() {
+  if (fileRowsRenderQueued) return;
+  fileRowsRenderQueued = true;
+  const schedule =
+    typeof window !== "undefined" &&
+    typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (cb) => setTimeout(cb, 16);
+  schedule(() => {
+    fileRowsRenderQueued = false;
+    if (!bulkDownloadInFlight) renderFileRows(currentEntries);
+  });
+}
+
+function getThumbnailConcurrency() {
+  return isLikelyMobileBrowser() ? 1 : 2;
+}
+
+function pauseThumbnailPrefetch() {
+  thumbnailPrefetchPaused = true;
+  thumbnailGeneration += 1;
+  thumbnailQueue.length = 0;
+}
+
+function resumeThumbnailPrefetch() {
+  thumbnailPrefetchPaused = false;
+  queueImageThumbnailLoads(currentEntries);
 }
 
 async function makeThumbnailUrl(blob, maxEdge = 52) {
@@ -2027,6 +2194,13 @@ function isLikelyMobileBrowser() {
   return /iphone|ipad|ipod|android|mobile/.test(ua);
 }
 
+function isLikelyIosSafari() {
+  const ua = String(navigator?.userAgent || "").toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const isWebKit = /safari/.test(ua) && !/crios|fxios|edgios/.test(ua);
+  return isIOS && isWebKit;
+}
+
 async function maybeShareMediaToPhotos(blob, entry, options = {}) {
   const mode = String(options.mode || "ask").toLowerCase();
   if (mode === "never") return false;
@@ -2079,6 +2253,83 @@ function resolveBulkMediaShareMode(entries = []) {
     "Save media to Photos for this whole batch? If you choose Yes, we will use Photos share flow for all selected photos/videos.",
   );
   return shouldShare ? "always" : "never";
+}
+
+async function chooseIosBatchDestination({ hasMedia = false } = {}) {
+  return await new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:1200;background:rgba(12,21,28,.58);display:flex;align-items:center;justify-content:center;padding:16px;";
+    const card = document.createElement("div");
+    card.style.cssText =
+      "width:min(440px,94vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 36px var(--shadow);padding:14px;";
+    card.innerHTML = `
+      <h3 style="margin:0 0 8px 0;">Save downloaded files</h3>
+      <p style="margin:0 0 12px 0;color:var(--muted);font-size:13px;">Choose where to save this batch.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${
+          hasMedia
+            ? '<button id="dest-photos" class="menu-btn" type="button">Save to Photos/Videos</button>'
+            : ""
+        }
+        <button id="dest-files" class="menu-btn" type="button">Save to Files</button>
+        <button id="dest-cancel" class="ghost" type="button">Cancel</button>
+      </div>
+    `;
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    const done = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+    card
+      .querySelector("#dest-photos")
+      ?.addEventListener("click", () => done("photos"));
+    card
+      .querySelector("#dest-files")
+      ?.addEventListener("click", () => done("files"));
+    card
+      .querySelector("#dest-cancel")
+      ?.addEventListener("click", () => done("cancel"));
+  });
+}
+
+async function shareFileBatch(items = [], title = "Save files") {
+  if (!Array.isArray(items) || !items.length) return;
+  if (
+    typeof navigator?.share !== "function" ||
+    typeof globalThis.File !== "function"
+  ) {
+    for (const item of items) {
+      const blob = new Blob([item.bytes], {
+        type: item.mimeType || "application/octet-stream",
+      });
+      triggerBrowserDownload(blob, item.name || "download.bin");
+    }
+    return;
+  }
+  const files = items.map(
+    (item) =>
+      new globalThis.File([item.bytes], String(item.name || "download.bin"), {
+        type: String(item.mimeType || "application/octet-stream"),
+      }),
+  );
+  if (typeof navigator?.canShare === "function") {
+    try {
+      if (!navigator.canShare({ files })) {
+        for (const item of items) {
+          const blob = new Blob([item.bytes], {
+            type: item.mimeType || "application/octet-stream",
+          });
+          triggerBrowserDownload(blob, item.name || "download.bin");
+        }
+        return;
+      }
+    } catch {
+      return;
+    }
+  }
+  await navigator.share({ files, title });
 }
 
 function escapeHtml(value) {
