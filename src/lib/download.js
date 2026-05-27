@@ -156,6 +156,7 @@ export async function* readInviteEntryChunks(
       entry.drivePath,
       offset,
       length,
+      total,
       waitMs,
       retryMs,
     );
@@ -188,6 +189,7 @@ async function waitForChunk(
   drivePath,
   offset,
   length,
+  fileSize,
   waitMs,
   retryMs,
   options = {},
@@ -198,7 +200,7 @@ async function waitForChunk(
   let emptyCount = 0;
   while (true) {
     try {
-      const data = await drive.getChunk(drivePath, offset, length);
+      const data = await drive.getChunk(drivePath, offset, length, fileSize);
       const bytes = toUint8(data);
       if (bytes.byteLength > 0) {
         sawAnyData = true;

@@ -827,6 +827,7 @@ export async function openDriveViaWebRtcInvite(
     }
   }
   emitPhase("channel-open");
+  const peerName = resolveWebPeerName();
 
   emitPhase("drive-ready");
   return {
@@ -836,6 +837,7 @@ export async function openDriveViaWebRtcInvite(
           const response = await peer.request({
             type: "manifest",
             invite: parsed.nativeInvite,
+            peerName,
           });
           return b4a.from(JSON.stringify(response.manifest), "utf8");
         }
@@ -844,26 +846,67 @@ export async function openDriveViaWebRtcInvite(
           type: "file",
           path: drivePath,
           invite: parsed.nativeInvite,
+          peerName,
         });
         if (!response?.dataBase64) return null;
         return b4a.from(response.dataBase64, "base64");
       },
-      async getChunk(drivePath, offset, length) {
+      async getChunk(drivePath, offset, length, fileSize = 0) {
         const response = await peer.request({
           type: "file-chunk",
           path: drivePath,
           offset: Number(offset || 0),
           length: Number(length || 0),
+          fileSize: Number(fileSize || 0),
           invite: parsed.nativeInvite,
+          peerName,
         });
         if (!response?.dataBase64) return null;
         return b4a.from(response.dataBase64, "base64");
       },
+      async complete() {
+        try {
+          await peer.request({
+            type: "complete",
+            invite: parsed.nativeInvite,
+            peerName,
+          });
+        } catch {}
+      },
+      async abort() {
+        try {
+          await peer.request({
+            type: "abort",
+            invite: parsed.nativeInvite,
+            peerName,
+          });
+        } catch {}
+      },
     },
     async close() {
+      try {
+        await peer.request({
+          type: "abort",
+          invite: parsed.nativeInvite,
+          peerName,
+        });
+      } catch {}
       await stopRtc();
     },
   };
+}
+
+function resolveWebPeerName() {
+  try {
+    const saved =
+      globalThis?.localStorage?.getItem("peardrop.peerName") ||
+      globalThis?.localStorage?.getItem("peardrop-peer-name") ||
+      "";
+    const normalized = String(saved || "").trim();
+    return normalized || "Web";
+  } catch {
+    return "Web";
+  }
 }
 
 function createLineSignal(signalSocket, b4a) {

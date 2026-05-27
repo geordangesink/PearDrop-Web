@@ -1322,6 +1322,7 @@ async function downloadEntry(entry, options = {}) {
         useByteProgress ? "bytes" : "count",
       );
     }
+    await notifySessionComplete();
   } finally {
     if (lockKey) {
       activeDownloadEntryKeys.delete(lockKey);
@@ -1522,11 +1523,14 @@ async function downloadSelectedIndividually() {
       await sleep(40);
     }
     statusEl.textContent = `Downloaded ${picked.length} selected file(s).`;
+    await notifySessionComplete();
   } catch (error) {
     if (signal.cancelled) {
+      await notifySessionAbort();
       statusEl.textContent = "Download cancelled.";
       return;
     }
+    await notifySessionAbort();
     throw error;
   } finally {
     activeBulkDownloadSignal = null;
@@ -1650,11 +1654,14 @@ async function downloadSelectedAsTgz() {
     const fileName = `pear-drops-${Date.now()}.tgz`;
     triggerBrowserDownload(blob, fileName);
     statusEl.textContent = `Downloaded ${fileName}`;
+    await notifySessionComplete();
   } catch (error) {
     if (signal.cancelled) {
+      await notifySessionAbort();
       statusEl.textContent = "Download cancelled.";
       return;
     }
+    await notifySessionAbort();
     throw error;
   } finally {
     activeBulkDownloadSignal = null;
@@ -1664,6 +1671,30 @@ async function downloadSelectedAsTgz() {
     hideDownloadProgress();
     hideBulkProgressModal();
   }
+}
+
+async function notifySessionComplete() {
+  if (
+    !currentSession?.drive ||
+    typeof currentSession.drive.complete !== "function"
+  ) {
+    return;
+  }
+  try {
+    await currentSession.drive.complete();
+  } catch {}
+}
+
+async function notifySessionAbort() {
+  if (
+    !currentSession?.drive ||
+    typeof currentSession.drive.abort !== "function"
+  ) {
+    return;
+  }
+  try {
+    await currentSession.drive.abort();
+  } catch {}
 }
 
 function showBulkProgressModal(done, total, title, subtitle = "") {
