@@ -1,15 +1,15 @@
-const FALLBACK_RELEASES_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases";
-const FALLBACK_WINDOWS_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-Setup.exe";
-const FALLBACK_MAC_ARM64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-macos-arm64.dmg";
-const FALLBACK_MAC_X64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-macos-x64.dmg";
-const FALLBACK_LINUX_ARM64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-arm64.tar.gz";
-const FALLBACK_LINUX_X64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-x64.tar.gz";
+const FALLBACK_DESKTOP_REPOSITORY_URL =
+  "https://github.com/geordangesink/PearDrop-Desktop";
+const FALLBACK_WEB_REPOSITORY_URL =
+  "https://github.com/geordangesink/PearDrop-Web";
+const FALLBACK_RELEASES_URL = `${FALLBACK_DESKTOP_REPOSITORY_URL}/releases`;
+const FALLBACK_RELEASES_API_URL =
+  "https://api.github.com/repos/geordangesink/PearDrop-Desktop/releases?per_page=100";
+const FALLBACK_WINDOWS_URL = `${FALLBACK_RELEASES_URL}/latest/download/PearDrop-Setup.exe`;
+const FALLBACK_MAC_ARM64_URL = `${FALLBACK_RELEASES_URL}/latest/download/PearDrop-macos-arm64.dmg`;
+const FALLBACK_MAC_X64_URL = `${FALLBACK_RELEASES_URL}/latest/download/PearDrop-macos-x64.dmg`;
+const FALLBACK_LINUX_ARM64_URL = `${FALLBACK_RELEASES_URL}/latest/download/PearDrop-linux-arm64.tar.gz`;
+const FALLBACK_LINUX_X64_URL = `${FALLBACK_RELEASES_URL}/latest/download/PearDrop-linux-x64.tar.gz`;
 const FALLBACK_ANDROID_URL =
   "https://play.google.com/store/apps/details?id=online.peardrop.app&pcampaignid=web_share";
 const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
@@ -44,6 +44,11 @@ export const APP_LINKS = {
   ios: String(ENV.VITE_IOS_APP_URL || ""),
   android: String(ENV.VITE_ANDROID_APP_URL || FALLBACK_ANDROID_URL),
   releases: String(ENV.VITE_RELEASES_URL || FALLBACK_RELEASES_URL),
+  releasesApi: String(ENV.VITE_RELEASES_API_URL || FALLBACK_RELEASES_API_URL),
+  desktopSource: String(
+    ENV.VITE_DESKTOP_REPOSITORY_URL || FALLBACK_DESKTOP_REPOSITORY_URL,
+  ),
+  webSource: String(ENV.VITE_WEB_REPOSITORY_URL || FALLBACK_WEB_REPOSITORY_URL),
 };
 
 export function detectClientPlatform(uaInput = "") {
@@ -206,8 +211,7 @@ function detectDesktopArch(ua) {
   if (
     lowered.includes("x86_64") ||
     lowered.includes("amd64") ||
-    lowered.includes("x64") ||
-    lowered.includes("intel")
+    lowered.includes("x64")
   ) {
     return "x64";
   }

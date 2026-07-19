@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { toInviteUrl, toNativeInviteUrl } from "../src/lib/app-links.js";
+import {
+  detectClientPlatform,
+  toInviteUrl,
+  toNativeInviteUrl,
+} from "../src/lib/app-links.js";
 
 test("toNativeInviteUrl accepts https open links with nested invite", () => {
   const native =
@@ -30,4 +34,18 @@ test("toNativeInviteUrl resolves native invite nested inside peardrops-web link"
   const webInvite = `peardrops-web://join?signal=abc123&invite=${encodeURIComponent(native)}`;
   const httpsLink = `https://peardrop.online/open/?invite=${encodeURIComponent(webInvite)}`;
   assert.equal(toNativeInviteUrl(httpsLink), native);
+});
+
+test("generic macOS user agents do not guess Intel architecture", () => {
+  const platform = detectClientPlatform(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+  );
+
+  assert.equal(platform.id, "mac");
+  assert.equal(platform.arch, "");
+});
+
+test("explicit desktop architecture markers are preserved", () => {
+  assert.equal(detectClientPlatform("Mac OS X x86_64").arch, "x64");
+  assert.equal(detectClientPlatform("Linux aarch64").arch, "arm64");
 });

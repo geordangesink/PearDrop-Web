@@ -7,76 +7,13 @@
     <link rel="icon" type="image/png" href="/favicon.png?v=6" />
     <link rel="shortcut icon" href="/favicon.png?v=6" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=6" />
-    <style>
-      body {
-        margin: 0;
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
-        color: #1a2b3a;
-        background: radial-gradient(circle at top left, #e8f4ef, #f3f8ff);
-      }
-      main {
-        width: min(920px, 94vw);
-        margin: 28px auto;
-        background: #fff;
-        border: 1px solid #d6e2ed;
-        border-radius: 16px;
-        padding: 22px;
-        box-shadow: 0 12px 32px rgba(20, 40, 60, 0.1);
-      }
-      h1 {
-        margin: 0 0 10px;
-        font-size: 34px;
-      }
-      h2 {
-        margin: 20px 0 8px;
-        font-size: 22px;
-      }
-      p,
-      li {
-        line-height: 1.58;
-        color: #445d73;
-      }
-      ul {
-        margin: 8px 0;
-      }
-      .nav {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-      }
-      .nav a {
-        border: 1px solid #c8d8e8;
-        border-radius: 999px;
-        padding: 7px 12px;
-        text-decoration: none;
-        color: #2f4c65;
-        background: #f3f8fd;
-        font-weight: 600;
-        font-size: 13px;
-      }
-      .muted {
-        color: #687f93;
-      }
-      code {
-        background: #f2f7fc;
-        border: 1px solid #d5e2ee;
-        border-radius: 6px;
-        padding: 2px 6px;
-      }
-      .card {
-        border: 1px solid #d6e2ed;
-        border-radius: 12px;
-        padding: 14px;
-        background: #f8fbff;
-      }
-    </style>
+    <meta name="theme-color" content="#f5f3ea" />
   </head>
   <body>
     <main>
       <nav class="nav">
         <a href="/">Home</a>
-        <a href="/web-client/">Web Client</a>
+        <a href="/web-client/">WebRTC Beta</a>
         <a href="/impressum.html">Legal Notice</a>
         <a href="/privacy.html">Privacy Policy</a>
         <a href="/terms.html">Terms of Service</a>
@@ -108,8 +45,9 @@
           installed, then try opening the link again.
         </li>
         <li>
-          Web transfer does not start: Check that both peers are online and
-          disable strict content blockers for the session page.
+          Web transfer does not start: Browser transfers use WebRTC only and are
+          most reliable on the same network. Disable VPNs or strict content
+          blockers, or use the native app when the peer connection is blocked.
         </li>
         <li>
           Download is blocked by browser: Allow downloads for
@@ -130,5 +68,6 @@
 
       <p class="muted">Last updated: April 11, 2026.</p>
     </main>
+    <script type="module" src="/src/document.js"></script>
   </body>
 </html>

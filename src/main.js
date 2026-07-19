@@ -594,14 +594,14 @@ app.innerHTML = `
   </style>
 
   <div class="top-row">
-    <h1>PearDrop Web Client</h1>
+    <h1>PearDrop WebRTC Beta</h1>
     <div class="theme-switch" role="group" aria-label="Theme">
       <button class="theme-btn" data-theme-mode="system" aria-pressed="false">System</button>
       <button class="theme-btn" data-theme-mode="dark" aria-pressed="false">Dark</button>
       <button class="theme-btn" data-theme-mode="light" aria-pressed="false">Light</button>
     </div>
   </div>
-  <p>View an invite drive in browser, then download selected files peer-to-peer.</p>
+  <p>View an invite drive and download peer-to-peer over WebRTC. Same-network transfers are the most reliable; some routers, VPNs, and firewalls may block the connection.</p>
   <p><a href="/" style="color:var(--link); font-weight:700; text-decoration:none;">← Back to landing</a></p>
 
   <label for="invite">Invite link</label>
@@ -1192,7 +1192,7 @@ function renderFileRows(entries) {
       <td class="cell-name" data-label="Name">${escapeHtml(entry.name || `File ${i + 1}`)}</td>
       <td class="row-muted cell-modified" data-label="Last modified">--</td>
       <td class="row-muted cell-size" data-label="Size">${formatBytes(Number(entry.byteLength || 0))}</td>
-      <td class="cell-actions" data-label="Actions"><button class="download-btn${downloading ? " is-loading" : ""}" data-action="download" data-index="${i}" ${downloading || bulkDownloadInFlight ? "disabled" : ""}>${downloading ? '<span class="download-spinner" aria-hidden="true"></span>Downloading...' : "Download"}</button></td>
+      <td class="cell-actions" data-label="Actions"><button class="download-btn${downloading ? " is-loading" : ""}" data-action="download" data-index="${i}" aria-label="${escapeHtml(`Download ${entry.name || "file"}`)}" ${downloading || bulkDownloadInFlight ? "disabled" : ""}>${downloading ? '<span class="download-spinner" aria-hidden="true"></span>Downloading...' : "Download"}</button></td>
     `;
     filesEl.appendChild(tr);
   }
@@ -1304,14 +1304,7 @@ async function downloadEntry(entry, options = {}) {
         mode: shareMediaMode,
       });
       if (handledByShareSheet) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = entry.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      triggerBrowserDownload(blob, entry.name);
     }
     if (manageProgress) {
       showDownloadProgress(
@@ -1872,7 +1865,7 @@ function triggerBrowserDownload(blob, fileName) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function sanitizeTarName(name) {
