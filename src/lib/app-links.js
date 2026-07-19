@@ -7,9 +7,9 @@ const FALLBACK_MAC_ARM64_URL =
 const FALLBACK_MAC_X64_URL =
   "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-macos-x64.dmg";
 const FALLBACK_LINUX_ARM64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-arm64.AppImage";
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-arm64.tar.gz";
 const FALLBACK_LINUX_X64_URL =
-  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-x64.AppImage";
+  "https://github.com/geordangesink/Pear-Drops-Desktop/releases/latest/download/PearDrop-linux-x64.tar.gz";
 const FALLBACK_ANDROID_URL =
   "https://play.google.com/store/apps/details?id=online.peardrop.app&pcampaignid=web_share";
 const FALLBACK_SITE_ORIGIN = "https://peardrop.online";
