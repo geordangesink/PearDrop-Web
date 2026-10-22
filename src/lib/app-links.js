@@ -33,6 +33,8 @@ function resolveWindowsInstallerUrl() {
 }
 
 export const APP_LINKS = {
+  pearInstallCommand:
+    "pear install pear://njogbfw41i7gkbwo5mqz751d4d771wuemy45iwx3i174mpshjipy",
   siteOrigin: String(ENV.VITE_PUBLIC_SITE_ORIGIN || FALLBACK_SITE_ORIGIN),
   windows: resolveWindowsInstallerUrl(),
   macArm64: String(ENV.VITE_MAC_INSTALLER_ARM64_URL || FALLBACK_MAC_ARM64_URL),
@@ -57,7 +59,12 @@ export function detectClientPlatform(uaInput = "") {
   ).toLowerCase();
   const isAndroid = ua.includes("android");
   const isIPhone = ua.includes("iphone");
-  const isIPad = ua.includes("ipad");
+  const isIPad =
+    ua.includes("ipad") ||
+    (!uaInput &&
+      ua.includes("macintosh") &&
+      typeof navigator !== "undefined" &&
+      navigator.maxTouchPoints > 1);
   const isIOS = isIPhone || isIPad;
   const isWindows = ua.includes("windows");
   const isMac = ua.includes("mac os x") && !isIOS;

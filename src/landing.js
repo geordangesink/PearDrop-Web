@@ -67,6 +67,7 @@ function renderLanding() {
 
   app.innerHTML = `
   <a class="skip-link" href="#content">Skip to content</a>
+  ${pearInstallBanner()}
   ${siteHeader()}
   <main id="content" class="page-shell">
     <section class="hero container" aria-labelledby="hero-title">
@@ -255,8 +256,35 @@ function renderLanding() {
   ${siteFooter()}
   `;
 
+  initPearInstall();
   initNavigation();
   initReleaseArchive();
+}
+
+function pearInstallBanner() {
+  if (platform.group !== "desktop") return "";
+  return `
+    <aside class="pear-install" aria-label="Install PearDrop with Pear">
+      <div class="pear-install-inner container">
+        <span class="pear-install-label">Install with Pear <small>Desktop · requires Pear</small></span>
+        <code>${escapeHtml(APP_LINKS.pearInstallCommand)}</code>
+        <button class="pear-install-copy button button-secondary" type="button" aria-label="Copy Pear install command">${ICONS.copy}<span aria-live="polite">Copy command</span></button>
+      </div>
+    </aside>
+  `;
+}
+
+function initPearInstall() {
+  const button = document.querySelector(".pear-install-copy");
+  button?.addEventListener("click", async () => {
+    const label = button.querySelector("span");
+    try {
+      await navigator.clipboard.writeText(APP_LINKS.pearInstallCommand);
+      label.textContent = "Copied!";
+    } catch {
+      label.textContent = "Select command to copy";
+    }
+  });
 }
 
 function siteHeader() {
